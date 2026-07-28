@@ -1,5 +1,7 @@
 <!doctype html>
-<html lang="en">
+<!-- data-theme is set here, not by script, so the page never flashes the dark
+     palette before main.ts runs. It must agree with the default in core/theme.ts. -->
+<html lang="en" data-theme="day">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -8,7 +10,7 @@
       name="description"
       content="An explorable 3D city that shows how Kubernetes actually works: the API server pipeline, etcd's raft log, the scheduler, reconcile loops, kubelet, CNI, CSI and the pods themselves."
     />
-    <meta name="color-scheme" content="dark" />
+    <meta name="color-scheme" content="light dark" />
     <link rel="icon" href="./public/favicon.svg" type="image/svg+xml" />
   </head>
   <body>

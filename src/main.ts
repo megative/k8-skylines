@@ -10,7 +10,7 @@ import './styles/viewbar.css'
 
 import { bus } from './core/bus'
 import { registry } from './core/registry'
-import { setMode } from './core/theme'
+import { getMode, setMode } from './core/theme'
 import { Rng } from './core/util'
 import type { Knobs, SimState } from './core/types'
 
@@ -71,6 +71,10 @@ function main(): void {
       }`,
     )
   }
+
+  /* index.html hard-codes the same value to avoid a flash; this keeps the DOM
+   * honest if the default in core/theme.ts ever changes and the markup lags. */
+  document.documentElement.dataset.theme = getMode()
 
   const sim = createSim()
   /* One fixed seed for the whole city, so scatter is identical across reloads

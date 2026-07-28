@@ -81,7 +81,10 @@ interface CacheEntry {
  */
 const cache = new Map<string, CacheEntry>()
 
-let mode: ThemeMode = 'night'
+/* Daylight is the default. Night is the more striking shot, but a newcomer
+ * reads the architecture faster when hue and value carry meaning and nothing
+ * glows; the neon city is a mode you choose, not the one you land in. */
+let mode: ThemeMode = 'day'
 
 function applyEntry(e: CacheEntry): void {
   const night = mode === 'night'

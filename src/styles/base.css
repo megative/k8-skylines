@@ -11,9 +11,24 @@ body {
   padding: 0;
   height: 100%;
   overflow: hidden;
-  background: #05070c;
+  /* The shell colour is the scene's own backdrop showing through before the
+   * first frame; it has to follow the theme or the page flashes the wrong one. */
+  background: var(--k8-shell, #05070c);
   color-scheme: dark;
   overscroll-behavior: none;
+}
+
+:root[data-theme='day'] {
+  --k8-shell: #aeb9c6;
+  --k8-boot-1: #dfe6ee;
+  --k8-boot-2: #aeb9c6;
+  --k8-boot-title: #0f6f86;
+  --k8-boot-sub: #4a5a6b;
+}
+
+:root[data-theme='day'] html,
+:root[data-theme='day'] body {
+  color-scheme: light;
 }
 
 body {
@@ -39,7 +54,11 @@ body {
   inset: 0;
   display: grid;
   place-items: center;
-  background: radial-gradient(ellipse at 50% 40%, #0d1420 0%, #05070c 70%);
+  background: radial-gradient(
+    ellipse at 50% 40%,
+    var(--k8-boot-1, #0d1420) 0%,
+    var(--k8-boot-2, #05070c) 70%
+  );
   z-index: 100;
   transition: opacity 0.6s ease;
   pointer-events: none;
@@ -57,7 +76,7 @@ body {
   font-size: 2rem;
   font-weight: 650;
   letter-spacing: 0.12em;
-  color: #38e8ff;
+  color: var(--k8-boot-title, #38e8ff);
   text-transform: uppercase;
 }
 
@@ -65,7 +84,7 @@ body {
   margin-top: 0.6rem;
   font-size: 0.85rem;
   letter-spacing: 0.06em;
-  color: #7f8b9c;
+  color: var(--k8-boot-sub, #7f8b9c);
   font-family: var(--k8-mono, ui-monospace, 'SF Mono', Menlo, monospace);
 }
 
