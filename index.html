@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>K8Skylines — an explorable 3D city of Kubernetes</title>
+    <meta
+      name="description"
+      content="An explorable 3D city that shows how Kubernetes actually works: the API server pipeline, etcd's raft log, the scheduler, reconcile loops, kubelet, CNI, CSI and the pods themselves."
+    />
+    <meta name="color-scheme" content="dark" />
+    <link rel="icon" href="./public/favicon.svg" type="image/svg+xml" />
+  </head>
+  <body>
+    <!-- The WebGL canvas fills the viewport; every overlay below sits on top. -->
+    <canvas id="stage" aria-label="3D city of a Kubernetes cluster"></canvas>
+
+    <!-- Boot / WebGL failure message, replaced once the scene is live. -->
+    <div id="boot" role="status">
+      <div class="boot-inner">
+        <div class="boot-title">K8Skylines</div>
+        <div class="boot-sub" id="boot-sub">building the cluster…</div>
+      </div>
+    </div>
+
+    <!-- Persistent read-outs. Populated by src/ui/hud.ts. -->
+    <header id="hud-top" class="hud"></header>
+    <aside id="hud-left" class="hud"></aside>
+    <aside id="hud-right" class="hud"></aside>
+    <footer id="hud-bottom" class="hud"></footer>
+
+    <!-- Floating 3D-anchored labels. Owned by src/engine/labels.ts. -->
+    <div id="labels" aria-hidden="true"></div>
+
+    <!-- The inspector: what the selected component is and what it is doing. -->
+    <section id="panel" class="overlay" hidden></section>
+
+    <!-- Control rail: the knobs. -->
+    <section id="controls" class="overlay" hidden></section>
+
+    <!-- Command palette, keyboard map, tour, scenario menu. -->
+    <section id="search" class="overlay" hidden></section>
+    <section id="help" class="overlay" hidden></section>
+    <section id="tour" class="overlay" hidden></section>
+    <div id="context-menu" hidden></div>
+    <div id="toasts" role="log" aria-live="polite"></div>
+
+    <noscript>
+      <p style="color: #e8eef6; font: 16px system-ui; padding: 2rem">
+        K8Skylines is a 3D visualization and needs JavaScript and WebGL2.
+      </p>
+    </noscript>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

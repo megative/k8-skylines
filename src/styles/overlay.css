@@ -1,0 +1,632 @@
+/* The modal overlays: command palette, keyboard map and colour legend, and the
+ * guided tour. Colour tokens come from tokens.css and are never redefined here.
+ *
+ * The palette and the help sheet are modal — they cover the canvas and take the
+ * keyboard. The tour deliberately is not: it sits along the bottom edge so the
+ * city it is describing stays visible above it. */
+
+/* An id selector outranks `.overlay[hidden]` in base.css, so every rule below
+ * that sets `display` has to restore the hidden case itself. */
+#search[hidden],
+#help[hidden],
+#tour[hidden] {
+  display: none;
+}
+
+.ovl-scrim,
+.cmd-scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(3, 5, 9, 0.55);
+  backdrop-filter: blur(2px);
+}
+
+:root[data-theme='day'] .ovl-scrim,
+:root[data-theme='day'] .cmd-scrim {
+  background: rgba(16, 23, 32, 0.34);
+}
+
+/* ========================================================= command palette */
+
+#search {
+  inset: 0;
+  display: grid;
+  justify-items: center;
+  align-items: start;
+  padding: clamp(2rem, 12vh, 8rem) 1rem 1rem;
+}
+
+.cmd {
+  position: relative;
+  width: min(42rem, 100%);
+  max-height: min(32rem, 74vh);
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--k8-radius, 10px);
+  border: 1px solid var(--k8-border, #26314a);
+  background: var(--k8-panel, rgba(11, 15, 24, 0.96));
+  box-shadow: var(--k8-shadow, 0 24px 64px rgba(0, 0, 0, 0.6));
+  color: var(--k8-text, #e8eef6);
+  overflow: hidden;
+}
+
+.cmd-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.7rem 0.85rem;
+  border-bottom: 1px solid var(--k8-border, #26314a);
+}
+
+.cmd-prompt {
+  color: var(--k8-accent, #38e8ff);
+  font-family: var(--k8-mono, ui-monospace, Menlo, monospace);
+  font-size: 0.9rem;
+}
+
+.cmd-input {
+  flex: 1;
+  min-width: 0;
+  appearance: none;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--k8-text, #e8eef6);
+  font: 400 0.95rem/1.4 var(--k8-sans, system-ui, sans-serif);
+}
+
+.cmd-input::placeholder {
+  color: var(--k8-dim, #8b97ab);
+}
+
+.cmd-esc,
+.help kbd,
+.cmd-foot kbd {
+  font-family: var(--k8-mono, ui-monospace, Menlo, monospace);
+  font-size: 0.625rem;
+  color: var(--k8-dim, #8b97ab);
+  border: 1px solid var(--k8-border, #26314a);
+  border-radius: 5px;
+  padding: 0.15rem 0.35rem;
+  white-space: nowrap;
+}
+
+.cmd-list {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.35rem 0 0.5rem;
+}
+
+.cmd-group {
+  padding: 0.6rem 0.85rem 0.3rem;
+  font-size: 0.5875rem;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--k8-dim, #8b97ab);
+}
+
+.cmd-item {
+  --cmd-accent: var(--cmd-raw, var(--k8-accent, #38e8ff));
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  appearance: none;
+  border: 0;
+  border-left: 2px solid transparent;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  padding: 0.4rem 0.85rem;
+  cursor: pointer;
+  font: inherit;
+}
+
+.cmd-item.is-on {
+  background: color-mix(in srgb, var(--cmd-accent) 12%, transparent);
+  border-left-color: var(--cmd-accent);
+}
+
+/* Same darkening the inspector does: the night palette is tuned for glow. */
+:root[data-theme='day'] .cmd-item {
+  --cmd-accent: color-mix(in srgb, var(--cmd-raw, var(--k8-accent)) 62%, #06121a);
+}
+
+:root[data-theme='day'] .tour {
+  --tour-accent: color-mix(in srgb, var(--tour-raw, var(--k8-accent)) 62%, #06121a);
+}
+
+.cmd-kind {
+  flex: none;
+  width: 5.25rem;
+  font-family: var(--k8-mono, ui-monospace, Menlo, monospace);
+  font-size: 0.5875rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--cmd-accent);
+  opacity: 0.9;
+}
+
+.cmd-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.cmd-label {
+  font-size: 0.8125rem;
+  font-weight: 550;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cmd-sub {
+  font-size: 0.6875rem;
+  line-height: 1.35;
+  color: var(--k8-dim, #8b97ab);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cmd-item.is-on .cmd-sub {
+  color: color-mix(in srgb, var(--k8-text, #e8eef6) 74%, transparent);
+}
+
+.cmd-tag {
+  flex: none;
+  max-width: 9rem;
+  font-family: var(--k8-mono, ui-monospace, Menlo, monospace);
+  font-size: 0.625rem;
+  color: var(--k8-dim, #8b97ab);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cmd-note,
+.cmd-empty {
+  padding: 0.75rem 0.85rem 0.4rem;
+  font-size: 0.6875rem;
+  color: var(--k8-dim, #8b97ab);
+}
+
+.cmd-foot {
+  display: flex;
+  gap: 1rem;
+  padding: 0.5rem 0.85rem;
+  border-top: 1px solid var(--k8-border, #26314a);
+  font-size: 0.625rem;
+  color: var(--k8-dim, #8b97ab);
+}
+
+/* ================================================ help: keys and the legend */
+
+#help {
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.ovl-sheet {
+  position: relative;
+  width: min(58rem, 100%);
+  max-height: min(50rem, 88vh);
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--k8-radius, 10px);
+  border: 1px solid var(--k8-border, #26314a);
+  background: var(--k8-panel, rgba(11, 15, 24, 0.97));
+  box-shadow: var(--k8-shadow, 0 24px 64px rgba(0, 0, 0, 0.6));
+  color: var(--k8-text, #e8eef6);
+  overflow: hidden;
+}
+
+.ovl-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1.1rem;
+  border-bottom: 1px solid var(--k8-border, #26314a);
+}
+
+.ovl-title {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 640;
+  letter-spacing: 0.01em;
+}
+
+.ovl-close {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--k8-dim, #8b97ab);
+  font-size: 0.9rem;
+  line-height: 1;
+  padding: 0.3rem 0.4rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.ovl-close:hover {
+  color: var(--k8-text, #e8eef6);
+  background: color-mix(in srgb, var(--k8-text, #e8eef6) 10%, transparent);
+}
+
+.ovl-scroll {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 1rem 1.1rem 1.4rem;
+}
+
+.help-keys {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  gap: 1.1rem 1.6rem;
+  margin-bottom: 1.6rem;
+}
+
+.help-block + .help-block {
+  margin-top: 1.2rem;
+}
+
+.help-h {
+  margin: 0 0 0.55rem;
+  font-size: 0.625rem;
+  font-weight: 650;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--k8-dim, #8b97ab);
+}
+
+.help-sub {
+  margin: 1.1rem 0 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--k8-text, #e8eef6) 85%, transparent);
+}
+
+.help-table {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.help-row {
+  display: grid;
+  grid-template-columns: 9.5rem 1fr;
+  gap: 0.6rem;
+  align-items: baseline;
+  font-size: 0.75rem;
+}
+
+.help-kcell {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.15rem;
+}
+
+.help-join {
+  color: var(--k8-dim, #8b97ab);
+  font-size: 0.625rem;
+}
+
+.help-d {
+  color: color-mix(in srgb, var(--k8-text, #e8eef6) 82%, transparent);
+  line-height: 1.45;
+}
+
+.help-note,
+.help-foot {
+  margin: 0 0 0.9rem;
+  font-size: 0.75rem;
+  line-height: 1.55;
+  color: var(--k8-dim, #8b97ab);
+  max-width: 46rem;
+}
+
+.help-foot {
+  margin: 1.5rem 0 0;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--k8-border, #26314a);
+}
+
+.help-swatches {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr));
+  gap: 0.4rem 1.2rem;
+}
+
+.help-swatch {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  padding: 0.25rem 0;
+}
+
+.help-chip {
+  flex: none;
+  width: 0.85rem;
+  height: 0.85rem;
+  margin-top: 0.15rem;
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14) inset;
+}
+
+.help-swatch-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.help-swatch-name {
+  font-family: var(--k8-mono, ui-monospace, Menlo, monospace);
+  font-size: 0.6875rem;
+  color: var(--k8-text, #e8eef6);
+}
+
+.help-swatch-desc {
+  font-size: 0.6875rem;
+  line-height: 1.4;
+  color: var(--k8-dim, #8b97ab);
+}
+
+.help-swatch-hex {
+  flex: none;
+  font-family: var(--k8-mono, ui-monospace, Menlo, monospace);
+  font-size: 0.625rem;
+  color: color-mix(in srgb, var(--k8-dim, #8b97ab) 80%, transparent);
+}
+
+/* ============================================================== guided tour */
+
+/* While it runs, the tour owns the band above the event ticker. It may cover a
+ * read-out — the inspector gives up height for it instead, see panel.css — but
+ * never the knob rail, because a control you cannot reach is worse than a
+ * number you have to scroll to. */
+#tour {
+  left: 1rem;
+  right: 1rem;
+  bottom: 9.6rem;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+:root[data-rail='open'] #tour {
+  right: calc(var(--k8-rail-w, 21.5rem) + 1rem);
+}
+
+.tour {
+  --tour-accent: var(--tour-raw, var(--k8-accent, #38e8ff));
+  pointer-events: auto;
+  width: min(50rem, 100%);
+  max-height: 42vh;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--k8-radius, 10px);
+  border: 1px solid var(--k8-border, #26314a);
+  background: var(--k8-panel, rgba(11, 15, 24, 0.95));
+  box-shadow: var(--k8-shadow, 0 24px 64px rgba(0, 0, 0, 0.6));
+  backdrop-filter: blur(14px);
+  color: var(--k8-text, #e8eef6);
+  overflow: hidden;
+}
+
+.tour-rail {
+  display: flex;
+  gap: 2px;
+  padding: 0.5rem 0.9rem 0;
+}
+
+.tour-dot {
+  flex: 1;
+  height: 3px;
+  appearance: none;
+  border: 0;
+  padding: 0;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--k8-text, #e8eef6) 14%, transparent);
+  cursor: pointer;
+}
+
+.tour-dot.is-done {
+  background: color-mix(in srgb, var(--tour-accent) 45%, transparent);
+}
+
+.tour-dot.is-on {
+  background: var(--tour-accent);
+}
+
+.tour-body {
+  padding: 0.7rem 0.9rem 0.4rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.tour-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.5875rem;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.tour-count {
+  color: var(--k8-dim, #8b97ab);
+}
+
+.tour-district {
+  color: var(--tour-accent);
+}
+
+.tour-title {
+  margin: 0.35rem 0 0;
+  font-size: 1.0625rem;
+  font-weight: 640;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.tour-cmd {
+  display: block;
+  margin-top: 0.45rem;
+  font-family: var(--k8-mono, ui-monospace, Menlo, monospace);
+  font-size: 0.6875rem;
+  color: var(--tour-accent);
+  word-break: break-word;
+}
+
+.tour-cmd[hidden] {
+  display: none;
+}
+
+.tour-prose {
+  margin-top: 0.6rem;
+  columns: 22rem 2;
+  column-gap: 1.6rem;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+}
+
+.tour-p {
+  margin: 0 0 0.7rem;
+  break-inside: avoid-column;
+  color: color-mix(in srgb, var(--k8-text, #e8eef6) 88%, transparent);
+}
+
+.tour-code,
+code.tour-code {
+  font-family: var(--k8-mono, ui-monospace, Menlo, monospace);
+  font-size: 0.9em;
+  padding: 0.05em 0.3em;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--k8-text, #e8eef6) 9%, transparent);
+  word-break: break-word;
+}
+
+.tour-acts {
+  margin-top: 0.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.tour-acts[hidden] {
+  display: none;
+}
+
+/* What the tour is about to do to the cluster, and what it has already done.
+ * A tour that changes the world silently teaches distrust. */
+.tour-act {
+  font-size: 0.6875rem;
+  padding-left: 1.15rem;
+  position: relative;
+  color: var(--k8-dim, #8b97ab);
+}
+
+.tour-act::before {
+  content: '';
+  position: absolute;
+  left: 0.25rem;
+  top: 0.42em;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  border: 1px solid var(--k8-pending, #ffc14d);
+}
+
+.tour-act[data-state='done'] {
+  color: color-mix(in srgb, var(--k8-text, #e8eef6) 78%, transparent);
+}
+
+.tour-act[data-state='done']::before {
+  background: var(--k8-ready, #4fe08a);
+  border-color: var(--k8-ready, #4fe08a);
+}
+
+.tour-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.55rem 0.9rem 0.7rem;
+  border-top: 1px solid var(--k8-border, #26314a);
+}
+
+.tour-btn {
+  appearance: none;
+  border: 1px solid var(--k8-border, #26314a);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--k8-text, #e8eef6);
+  font: 550 0.75rem/1 var(--k8-sans, system-ui, sans-serif);
+  padding: 0.45rem 0.7rem;
+  cursor: pointer;
+}
+
+.tour-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--k8-text, #e8eef6) 8%, transparent);
+}
+
+.tour-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.tour-btn-primary {
+  border-color: color-mix(in srgb, var(--tour-accent) 55%, transparent);
+  background: color-mix(in srgb, var(--tour-accent) 16%, transparent);
+  color: var(--tour-accent);
+}
+
+.tour-btn-primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--tour-accent) 26%, transparent);
+}
+
+.tour-btn-ghost {
+  border-color: transparent;
+  color: var(--k8-dim, #8b97ab);
+}
+
+.tour-hint {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.625rem;
+  color: var(--k8-dim, #8b97ab);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 46rem) {
+  :root[data-panel='open'] #tour {
+    right: 1rem;
+  }
+
+  .tour {
+    max-height: 52vh;
+  }
+
+  .tour-prose {
+    columns: 1;
+  }
+
+  .tour-hint {
+    display: none;
+  }
+
+  .help-row {
+    grid-template-columns: 1fr;
+    gap: 0.15rem;
+  }
+}

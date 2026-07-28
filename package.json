@@ -1,0 +1,37 @@
+{
+  "name": "k8skylines",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "description": "An independent, non-commercial educational 3D visualization of Kubernetes internals.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "check:text": "node tools/check-text.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "preview": "vite preview --port 4173"
+  },
+  "keywords": [
+    "kubernetes",
+    "k8s",
+    "visualization",
+    "3d",
+    "threejs",
+    "webgl",
+    "education",
+    "etcd",
+    "scheduler"
+  ],
+  "devDependencies": {
+    "@types/three": "^0.185.0",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.5",
+    "vitest": "^4.1.10"
+  },
+  "dependencies": {
+    "three": "^0.185.0"
+  }
+}

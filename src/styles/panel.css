@@ -1,0 +1,315 @@
+/* The inspector.
+ *
+ * It docks over the left HUD column and that column steps aside rather than
+ * being covered — the same move the knob rail makes on the right, for the same
+ * reason: a read-out and the thing explaining it must be legible at once. The
+ * inspector is deliberately not modal, because you have to be able to keep
+ * clicking buildings while you read about one.
+ *
+ * Colour tokens come from tokens.css; district accents arrive from the palette
+ * in TypeScript as --pnl-raw, and only the day-mode darkening happens here. */
+
+:root {
+  --k8-insp-w: 24rem;
+}
+
+#hud-left {
+  transition: transform 0.22s ease;
+}
+
+:root[data-panel='open'] #hud-left {
+  transform: translateX(calc(var(--k8-insp-w) + 0.9rem));
+}
+
+/* An id selector outranks `.overlay[hidden]` in base.css, so every rule below
+ * that sets `display` has to restore the hidden case itself. */
+#panel[hidden] {
+  display: none;
+}
+
+#panel {
+  top: 3.6rem;
+  left: 0.6rem;
+  width: min(var(--k8-insp-w), calc(100vw - 1.2rem));
+  max-height: calc(100vh - 11rem);
+  display: flex;
+  border-radius: var(--k8-radius, 10px);
+  border: 1px solid var(--k8-border, #26314a);
+  background: var(--k8-panel, rgba(11, 15, 24, 0.92));
+  box-shadow: var(--k8-shadow, 0 18px 48px rgba(0, 0, 0, 0.55));
+  backdrop-filter: blur(14px);
+  color: var(--k8-text, #e8eef6);
+  overflow: hidden;
+  contain: layout paint;
+}
+
+/* The tour claims the bottom band; the inspector keeps the left column above
+ * it rather than being half-covered by it. */
+:root[data-tour='on'] #panel {
+  max-height: calc(100vh - 13.8rem - 42vh);
+}
+
+.pnl {
+  --pnl-accent: var(--pnl-raw, var(--k8-accent, #38e8ff));
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  width: 100%;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+}
+
+/* The night palette is tuned to glow against #05070c; on a light panel the same
+ * hue has to be darkened or the district badge becomes unreadable. */
+:root[data-theme='day'] .pnl {
+  --pnl-accent: color-mix(in srgb, var(--pnl-raw, var(--k8-accent)) 62%, #06121a);
+}
+
+/* The accent rail is the district's own colour, set from the palette in TS. */
+.pnl-head {
+  position: relative;
+  padding: 0.7rem 0.9rem 0.75rem;
+  border-bottom: 1px solid var(--k8-border, #26314a);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--pnl-accent) 9%, transparent), transparent);
+}
+
+.pnl-head::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2px;
+  background: var(--pnl-accent);
+}
+
+.pnl-eyebrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.pnl-district {
+  appearance: none;
+  border: 1px solid color-mix(in srgb, var(--pnl-accent) 40%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--pnl-accent) 14%, transparent);
+  color: var(--pnl-accent);
+  font: 600 0.625rem/1 var(--k8-sans, system-ui, sans-serif);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  padding: 0.28rem 0.55rem;
+  cursor: pointer;
+}
+
+.pnl-district:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--pnl-accent) 26%, transparent);
+}
+
+.pnl-district:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.pnl-close {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--k8-dim, #8b97ab);
+  font-size: 0.85rem;
+  line-height: 1;
+  padding: 0.3rem 0.35rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.pnl-close:hover {
+  color: var(--k8-text, #e8eef6);
+  background: color-mix(in srgb, var(--k8-text, #e8eef6) 10%, transparent);
+}
+
+.pnl-title {
+  margin: 0.5rem 0 0;
+  font-size: 1.0625rem;
+  font-weight: 640;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+
+.pnl-kube {
+  display: inline-block;
+  margin-top: 0.35rem;
+  font-family: var(--k8-mono, ui-monospace, Menlo, monospace);
+  font-size: 0.6875rem;
+  color: var(--pnl-accent);
+  word-break: break-all;
+}
+
+.pnl-kube[hidden] {
+  display: none;
+}
+
+.pnl-body {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.85rem 0.9rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.95rem;
+}
+
+.pnl-summary {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--k8-text, #e8eef6);
+}
+
+.pnl-sec {
+  margin: 0;
+}
+
+.pnl-sec[hidden] {
+  display: none;
+}
+
+.pnl-h {
+  margin: 0 0 0.45rem;
+  font-size: 0.625rem;
+  font-weight: 650;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--k8-dim, #8b97ab);
+}
+
+/* ------------------------------------------------------------- live metrics */
+
+.pnl-mlist {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border-radius: 7px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--k8-border, #26314a) 55%, transparent);
+}
+
+.pnl-mrow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.3rem 0.55rem;
+  background: color-mix(in srgb, var(--k8-bg, #0a0e16) 62%, transparent);
+}
+
+.pnl-mkey {
+  color: var(--k8-dim, #8b97ab);
+  font-size: 0.75rem;
+  min-width: 0;
+}
+
+.pnl-mval {
+  margin: 0;
+  text-align: right;
+  font-family: var(--k8-mono, ui-monospace, Menlo, monospace);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--k8-text, #e8eef6);
+}
+
+.pnl-mhint {
+  display: block;
+  font-family: var(--k8-sans, system-ui, sans-serif);
+  font-size: 0.6875rem;
+  color: var(--k8-dim, #8b97ab);
+}
+
+.pnl-mhint[hidden] {
+  display: none;
+}
+
+/* ------------------------------------------------------------------- prose */
+
+.pnl-p {
+  margin: 0 0 0.7rem;
+  color: color-mix(in srgb, var(--k8-text, #e8eef6) 88%, transparent);
+}
+
+.pnl-p:last-child {
+  margin-bottom: 0;
+}
+
+.pnl-code,
+code.pnl-code {
+  font-family: var(--k8-mono, ui-monospace, Menlo, monospace);
+  font-size: 0.9em;
+  padding: 0.05em 0.3em;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--k8-text, #e8eef6) 9%, transparent);
+  color: var(--k8-text, #e8eef6);
+  word-break: break-word;
+}
+
+/* ----------------------------------------------------------------- caveats */
+
+.pnl-caveats {
+  border-left: 2px solid var(--k8-pending, #ffc14d);
+  padding-left: 0.7rem;
+}
+
+.pnl-caveats .pnl-h {
+  color: var(--k8-pending, #ffc14d);
+}
+
+.pnl-clist {
+  margin: 0;
+  padding-left: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  color: color-mix(in srgb, var(--k8-text, #e8eef6) 76%, transparent);
+  font-size: 0.75rem;
+}
+
+/* ----------------------------------------------------------------- related */
+
+.pnl-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.pnl-chip {
+  appearance: none;
+  border: 1px solid var(--k8-border, #26314a);
+  border-radius: 999px;
+  background: transparent;
+  color: color-mix(in srgb, var(--k8-text, #e8eef6) 82%, transparent);
+  font: 500 0.6875rem/1 var(--k8-sans, system-ui, sans-serif);
+  padding: 0.35rem 0.6rem;
+  cursor: pointer;
+  text-align: left;
+}
+
+.pnl-chip:hover {
+  border-color: var(--pnl-accent);
+  color: var(--k8-text, #e8eef6);
+  background: color-mix(in srgb, var(--pnl-accent) 12%, transparent);
+}
+
+/* Narrow viewports: the inspector becomes a bottom sheet rather than eating
+ * the whole city, and the HUD column stays where it is. */
+@media (max-width: 60rem) {
+  #panel {
+    top: auto;
+    left: 0.5rem;
+    right: 0.5rem;
+    bottom: 0.5rem;
+    width: auto;
+    max-height: 56vh;
+  }
+
+  :root[data-panel='open'] #hud-left {
+    transform: none;
+  }
+}

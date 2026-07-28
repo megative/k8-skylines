@@ -1,0 +1,120 @@
+/* The always-on-screen view bar: theme, camera mode, and the input map.
+ * Sits above the event ticker on the left, clear of the HUD's side panels. */
+
+#viewbar {
+  position: fixed;
+  left: 1rem;
+  bottom: 4.25rem;
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--k8-border, #22303f);
+  border-radius: var(--k8-radius, 10px);
+  background: color-mix(in srgb, var(--k8-panel, #0e1520) 88%, transparent);
+  backdrop-filter: blur(9px);
+  box-shadow: var(--k8-shadow, 0 8px 28px rgb(0 0 0 / 45%));
+  font-family: var(--k8-sans, ui-sans-serif, system-ui, sans-serif);
+}
+
+.vb-group {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.vb-label {
+  font-size: 0.62rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--k8-dim, #7f8b9c);
+}
+
+.vb-seg {
+  display: flex;
+  border: 1px solid var(--k8-border, #22303f);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.vb-btn {
+  appearance: none;
+  border: 0;
+  margin: 0;
+  padding: 0.28rem 0.62rem;
+  font: inherit;
+  font-size: 0.72rem;
+  letter-spacing: 0.03em;
+  color: var(--k8-dim, #7f8b9c);
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.vb-btn + .vb-btn {
+  border-left: 1px solid var(--k8-border, #22303f);
+}
+
+.vb-btn:hover {
+  color: var(--k8-text, #e8eef6);
+  background: color-mix(in srgb, var(--k8-accent, #38e8ff) 12%, transparent);
+}
+
+.vb-btn.on {
+  color: #04121a;
+  background: var(--k8-accent, #38e8ff);
+  font-weight: 600;
+}
+
+.vb-btn:focus-visible {
+  outline: 2px solid var(--k8-accent, #38e8ff);
+  outline-offset: -2px;
+}
+
+.vb-keys {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding-left: 0.85rem;
+  border-left: 1px solid var(--k8-border, #22303f);
+  flex-wrap: wrap;
+}
+
+.vb-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.68rem;
+  color: var(--k8-dim, #7f8b9c);
+  white-space: nowrap;
+}
+
+.vb-key kbd {
+  font-family: var(--k8-mono, ui-monospace, Menlo, monospace);
+  font-size: 0.64rem;
+  padding: 0.12rem 0.34rem;
+  border: 1px solid var(--k8-border, #22303f);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  color: var(--k8-text, #e8eef6);
+  background: color-mix(in srgb, var(--k8-panel-2, #16202d) 90%, transparent);
+}
+
+/* The input map is the first thing to go when the viewport gets tight; the
+ * two selectors are what a small screen actually needs. */
+@media (max-width: 1100px) {
+  .vb-keys {
+    display: none;
+  }
+}
+
+@media (max-width: 720px) {
+  #viewbar {
+    left: 0.5rem;
+    right: 0.5rem;
+    bottom: 3.5rem;
+    justify-content: space-between;
+  }
+}

@@ -1,0 +1,404 @@
+/* ============================================================================
+ * The knob rail.
+ *
+ * It docks on the right, over the city, and slides away entirely when closed.
+ * The right-hand HUD column steps aside for it rather than being covered, so a
+ * knob and the read-out it moves stay visible at the same time.
+ * ==========================================================================*/
+
+:root {
+  --k8-rail-w: 21.5rem;
+}
+
+#controls {
+  top: 3.1rem;
+  bottom: 0;
+  width: var(--k8-rail-w);
+  display: flex;
+  flex-direction: column;
+  font-family: var(--k8-sans);
+  font-size: 12px;
+  color: var(--k8-text);
+  border-left: 1px solid var(--k8-border);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--k8-panel-2) 96%, transparent),
+    color-mix(in srgb, var(--k8-panel) 98%, transparent)
+  );
+  box-shadow: var(--k8-shadow);
+  /* Slid with `right`, not `transform`: a transformed ancestor would capture
+   * the fixed-position collapse handle and trap it off-screen with the rail. */
+  right: calc(-1 * var(--k8-rail-w));
+  transition: right 0.22s ease;
+}
+
+#controls.open {
+  right: 0;
+}
+
+/* The read-outs must not disappear behind the rail that changes them. */
+:root[data-rail="open"] #hud-right {
+  transform: translateX(calc(-1 * var(--k8-rail-w)));
+}
+
+:root[data-rail="open"] #hud-bottom {
+  padding-right: calc(var(--k8-rail-w) + 0.6rem);
+}
+
+/* ---------------------------------------------------------------------------
+ * Header.
+ * -------------------------------------------------------------------------*/
+
+.ctl-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.7rem;
+  border-bottom: 1px solid var(--k8-border);
+}
+
+.ctl-title {
+  flex: 1;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--k8-accent);
+}
+
+.ctl-btn,
+.ctl-collapse {
+  font: inherit;
+  color: var(--k8-dim);
+  background: color-mix(in srgb, var(--k8-text) 6%, transparent);
+  border: 1px solid var(--k8-border);
+  border-radius: 6px;
+  padding: 0.15rem 0.5rem;
+  cursor: pointer;
+}
+
+.ctl-btn:hover,
+.ctl-collapse:hover {
+  color: var(--k8-text);
+  border-color: color-mix(in srgb, var(--k8-accent) 55%, transparent);
+}
+
+.ctl-btn:focus-visible,
+.ctl-collapse:focus-visible,
+.ctl-range:focus-visible,
+.ctl-sw:focus-visible + .ctl-sw-ui {
+  outline: 2px solid var(--k8-accent);
+  outline-offset: 2px;
+}
+
+/* The collapse handle stays reachable when the rail is off-screen. */
+.ctl-collapse {
+  position: relative;
+  min-width: 1.7rem;
+  line-height: 1.2;
+}
+
+#controls:not(.open) .ctl-collapse {
+  position: fixed;
+  right: 0.6rem;
+  top: 3.6rem;
+  background: var(--k8-panel-2);
+  box-shadow: var(--k8-shadow);
+}
+
+/* ---------------------------------------------------------------------------
+ * Groups.
+ * -------------------------------------------------------------------------*/
+
+.ctl-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.4rem 0.7rem 1.2rem;
+}
+
+.ctl-group {
+  border-bottom: 1px solid var(--k8-border);
+  padding: 0.35rem 0 0.5rem;
+}
+
+.ctl-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  list-style: none;
+  padding: 0.2rem 0;
+}
+
+.ctl-summary::-webkit-details-marker {
+  display: none;
+}
+
+.ctl-summary::before {
+  content: "";
+  width: 3px;
+  height: 0.85em;
+  border-radius: 2px;
+  background: var(--hue, var(--k8-accent));
+  box-shadow: 0 0 10px var(--hue, var(--k8-accent));
+}
+
+.ctl-g-name {
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--hue, var(--k8-accent));
+}
+
+.ctl-summary::after {
+  content: "+";
+  margin-left: auto;
+  color: var(--k8-dim);
+  font-family: var(--k8-mono);
+}
+
+.ctl-group[open] .ctl-summary::after {
+  content: "–";
+}
+
+.ctl-note {
+  margin: 0.15rem 0 0.5rem;
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--k8-dim);
+  text-wrap: pretty;
+}
+
+/* ---------------------------------------------------------------------------
+ * A knob: label, live value, control, and what it changes for real.
+ * -------------------------------------------------------------------------*/
+
+.ctl-knob {
+  margin: 0 0 0.55rem;
+}
+
+.ctl-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.ctl-label {
+  font-size: 11.5px;
+  font-weight: 550;
+  color: var(--k8-text);
+}
+
+.ctl-out {
+  font-family: var(--k8-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--hue, var(--k8-accent));
+}
+
+.ctl-why {
+  margin: 0.15rem 0 0;
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--k8-dim);
+  text-wrap: pretty;
+}
+
+/* Range input, styled in both engines without a wrapper element. */
+.ctl-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 18px;
+  margin: 0.15rem 0 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.ctl-range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--k8-text) 14%, transparent);
+}
+
+.ctl-range::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--k8-text) 14%, transparent);
+}
+
+.ctl-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 13px;
+  height: 13px;
+  margin-top: -4.5px;
+  border-radius: 50%;
+  border: none;
+  background: var(--hue, var(--k8-accent));
+  box-shadow: 0 0 12px color-mix(in srgb, var(--hue, var(--k8-accent)) 60%, transparent);
+}
+
+.ctl-range::-moz-range-thumb {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: none;
+  background: var(--hue, var(--k8-accent));
+  box-shadow: 0 0 12px color-mix(in srgb, var(--hue, var(--k8-accent)) 60%, transparent);
+}
+
+.ctl-range:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+/* Switch. */
+.ctl-sw-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.ctl-sw {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  margin: 0;
+  cursor: pointer;
+}
+
+.ctl-sw-ui {
+  width: 30px;
+  height: 16px;
+  border-radius: 999px;
+  border: 1px solid var(--k8-border);
+  background: color-mix(in srgb, var(--k8-text) 10%, transparent);
+  position: relative;
+  transition: background 0.15s ease;
+}
+
+.ctl-sw-ui::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--k8-dim);
+  transition:
+    transform 0.15s ease,
+    background 0.15s ease;
+}
+
+.ctl-sw:checked + .ctl-sw-ui {
+  background: color-mix(in srgb, var(--hue, var(--k8-accent)) 32%, transparent);
+  border-color: color-mix(in srgb, var(--hue, var(--k8-accent)) 60%, transparent);
+}
+
+.ctl-sw:checked + .ctl-sw-ui::after {
+  transform: translateX(14px);
+  background: var(--hue, var(--k8-accent));
+  box-shadow: 0 0 10px var(--hue, var(--k8-accent));
+}
+
+/* ---------------------------------------------------------------------------
+ * Derived read-outs and validity notes.
+ * -------------------------------------------------------------------------*/
+
+.ctl-derived {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem;
+  margin: 0.2rem 0 0.5rem;
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--k8-dim);
+}
+
+.ctl-k {
+  font-size: 9.5px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--k8-dim);
+}
+
+.ctl-qos {
+  font-family: var(--k8-mono);
+  font-size: 11.5px;
+}
+
+.ctl-qos[data-qos="Guaranteed"] {
+  color: var(--k8-ready);
+}
+.ctl-qos[data-qos="Burstable"] {
+  color: var(--k8-pending);
+}
+.ctl-qos[data-qos="BestEffort"] {
+  color: var(--k8-backoff);
+}
+
+.ctl-qos-why {
+  flex: 1 1 100%;
+}
+
+.ctl-warn,
+.ctl-note-live {
+  display: none;
+  margin: 0 0 0.5rem;
+  padding: 0.3rem 0.45rem;
+  font-size: 10.5px;
+  line-height: 1.45;
+  border-radius: 6px;
+  text-wrap: pretty;
+}
+
+.ctl-warn.on,
+.ctl-note-live.on {
+  display: block;
+}
+
+.ctl-warn {
+  color: var(--k8-failed);
+  border: 1px solid color-mix(in srgb, var(--k8-failed) 45%, transparent);
+  background: color-mix(in srgb, var(--k8-failed) 12%, transparent);
+}
+
+.ctl-note-live {
+  color: var(--k8-controller);
+  border: 1px solid color-mix(in srgb, var(--k8-controller) 40%, transparent);
+  background: color-mix(in srgb, var(--k8-controller) 10%, transparent);
+}
+
+.ctl-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.7rem;
+  margin: 0.8rem 0 0;
+  font-family: var(--k8-mono);
+  font-size: 10px;
+  color: var(--k8-dim);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #controls,
+  .ctl-sw-ui,
+  .ctl-sw-ui::after {
+    transition: none;
+  }
+}
+
+@media (max-width: 760px) {
+  :root {
+    --k8-rail-w: min(21.5rem, 88vw);
+  }
+  :root[data-rail="open"] #hud-bottom {
+    padding-right: 0.6rem;
+  }
+}

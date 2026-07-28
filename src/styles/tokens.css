@@ -1,0 +1,95 @@
+/* ============================================================================
+ * Design tokens.
+ *
+ * Every hue below is the same 24-bit value `COLOR` in src/core/theme.ts hands
+ * the 3D city. That is the whole point of this file: a legend swatch, a HUD
+ * bar and the building they name must never drift apart, so the UI reads its
+ * colours from one place and the city reads them from the other, with these
+ * literals kept identical by review.
+ *
+ * Colour is semantic. If a rule here needs a hue that names no mechanism, the
+ * rule is decoration and should be deleted instead.
+ *
+ * Day mode keeps the same hue and darkens the value, because the night palette
+ * is tuned for glow against #05070c and would be unreadable on a light panel.
+ * The mix partner is the city's own structural dark, never an arbitrary grey.
+ * ==========================================================================*/
+
+:root {
+  color-scheme: dark;
+
+  /* Surfaces. --k8-bg is the void behind the city; panels are the city's
+   * structural tones (COLOR.ground, COLOR.deck) held translucent so the 3D
+   * scene stays visible underneath them. */
+  --k8-bg: #05070c;
+  --k8-panel: rgba(21, 26, 36, 0.84);
+  --k8-panel-2: rgba(30, 38, 52, 0.92);
+  --k8-text: #e8eef6;
+  --k8-dim: #93a0b2;
+  --k8-border: rgba(74, 90, 112, 0.42);
+
+  /* The application's signature hue is the same cyan the city uses for desired
+   * state, because "what you asked for" is the idea the whole model is about. */
+  --k8-accent: #38e8ff;
+
+  /* Desired versus actual, and the pod health states. */
+  --k8-desired: #38e8ff;
+  --k8-ready: #4fe08a;
+  --k8-pending: #ffc14d;
+  --k8-backoff: #ff9c3d;
+  --k8-failed: #ff4d5e;
+  --k8-terminating: #a88bd6;
+
+  /* One hue per mechanism. */
+  --k8-etcd: #9d6cff;
+  --k8-api: #3d8bff;
+  --k8-scheduler: #35e08a;
+  --k8-controller: #ff9d3d;
+  --k8-kubelet: #2fd8c8;
+  --k8-network: #ff5fd2;
+  --k8-storage: #4fd08a;
+
+  /* System stacks only: the bundle is static, offline, and loads no font. */
+  --k8-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --k8-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    sans-serif;
+
+  --k8-radius: 10px;
+  --k8-shadow:
+    0 10px 34px rgba(0, 0, 0, 0.55),
+    0 1px 0 rgba(255, 255, 255, 0.045) inset;
+}
+
+:root[data-theme="day"] {
+  color-scheme: light;
+
+  /* COLOR has no structural tone lighter than concreteDay, so the page void is
+   * that tone lifted; panels then step down through deckDay to stay readable. */
+  --k8-bg: #eef2f6;
+  --k8-panel: rgba(221, 227, 234, 0.9);
+  --k8-panel-2: rgba(195, 204, 214, 0.94);
+  --k8-text: #151a24;
+  --k8-dim: #4c5b70;
+  --k8-border: rgba(74, 90, 112, 0.38);
+
+  --k8-accent: color-mix(in srgb, #38e8ff 58%, #06121a);
+
+  --k8-desired: color-mix(in srgb, #38e8ff 58%, #06121a);
+  --k8-ready: color-mix(in srgb, #4fe08a 62%, #06121a);
+  --k8-pending: color-mix(in srgb, #ffc14d 68%, #06121a);
+  --k8-backoff: color-mix(in srgb, #ff9c3d 70%, #06121a);
+  --k8-failed: color-mix(in srgb, #ff4d5e 78%, #06121a);
+  --k8-terminating: color-mix(in srgb, #a88bd6 72%, #06121a);
+
+  --k8-etcd: color-mix(in srgb, #9d6cff 76%, #06121a);
+  --k8-api: color-mix(in srgb, #3d8bff 78%, #06121a);
+  --k8-scheduler: color-mix(in srgb, #35e08a 62%, #06121a);
+  --k8-controller: color-mix(in srgb, #ff9d3d 70%, #06121a);
+  --k8-kubelet: color-mix(in srgb, #2fd8c8 60%, #06121a);
+  --k8-network: color-mix(in srgb, #ff5fd2 74%, #06121a);
+  --k8-storage: color-mix(in srgb, #4fd08a 62%, #06121a);
+
+  --k8-shadow:
+    0 10px 28px rgba(16, 23, 32, 0.16),
+    0 1px 0 rgba(255, 255, 255, 0.6) inset;
+}

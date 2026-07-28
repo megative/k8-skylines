@@ -1,0 +1,746 @@
+/* ============================================================================
+ * The HUD: a dark instrument panel over a 3D city.
+ *
+ * Two rules shape everything below. Colour names a mechanism — every hue is a
+ * token from tokens.css and therefore the same hue the city uses for the same
+ * thing. And the HUD must never fight the camera: read-only surfaces let the
+ * pointer through so a drag that starts over the event ticker still orbits.
+ * ==========================================================================*/
+
+#hud-top,
+#hud-left,
+#hud-right,
+#hud-bottom {
+  font-family: var(--k8-sans);
+  color: var(--k8-text);
+  font-size: 12px;
+  line-height: 1.35;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------------------------------------------------------------------------
+ * Shared atoms.
+ * -------------------------------------------------------------------------*/
+
+.hud-k {
+  font-size: 9.5px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--k8-dim);
+  white-space: nowrap;
+}
+
+.hud-v {
+  font-family: var(--k8-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--k8-text);
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3em;
+}
+
+.hud-v.big {
+  font-size: 19px;
+  letter-spacing: -0.01em;
+}
+
+.hud-v.small {
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.hud-n {
+  font-family: var(--k8-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+.hud-n.small {
+  font-size: 11.5px;
+  min-width: 1.6em;
+  text-align: right;
+}
+
+.hud-d {
+  font-family: var(--k8-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--k8-dim);
+  font-weight: 500;
+}
+
+.hud-sep {
+  color: var(--k8-dim);
+  opacity: 0.55;
+  margin: 0 0.1em;
+}
+
+.hud-t {
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--k8-dim);
+}
+
+.hud-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  display: inline-block;
+  box-shadow: 0 0 8px currentColor;
+}
+
+.hud-hint {
+  margin: 0.4rem 0 0;
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--k8-dim);
+  text-wrap: pretty;
+}
+
+.hud-hint.inline {
+  margin: 0;
+}
+
+.hud-badge {
+  font-family: var(--k8-mono);
+  font-size: 9px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  padding: 0.12em 0.42em;
+  border-radius: 4px;
+  border: 1px solid var(--k8-border);
+  color: var(--k8-dim);
+}
+
+.hud-badge.bad {
+  display: none;
+  color: var(--k8-failed);
+  border-color: color-mix(in srgb, var(--k8-failed) 55%, transparent);
+  background: color-mix(in srgb, var(--k8-failed) 14%, transparent);
+}
+
+.hud-badge.bad.on {
+  display: inline-block;
+}
+
+/* ---------------------------------------------------------------------------
+ * Panels.
+ *
+ * `backdrop-filter` is a real per-frame cost over a WebGL canvas, so it is
+ * confined to these small, fixed-size surfaces and never applied to anything
+ * that covers a large share of the viewport.
+ * -------------------------------------------------------------------------*/
+
+.hud-panel {
+  position: relative;
+  padding: 0.55rem 0.7rem 0.6rem 0.8rem;
+  border: 1px solid var(--k8-border);
+  border-radius: var(--k8-radius);
+  background: linear-gradient(180deg, var(--k8-panel), var(--k8-panel-2));
+  box-shadow: var(--k8-shadow);
+  backdrop-filter: blur(14px) saturate(1.2);
+  overflow: hidden;
+}
+
+.hud-panel::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--hue, var(--k8-accent));
+  opacity: 0.85;
+}
+
+.hud-panel.bad::before {
+  background: var(--k8-failed);
+  box-shadow: 0 0 14px var(--k8-failed);
+}
+
+.hud-panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 0.45rem;
+}
+
+.hud-panel-title {
+  margin: 0;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--hue, var(--k8-accent));
+}
+
+.hud-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0.2rem 0;
+}
+
+.hud-line.hud-sub {
+  justify-content: flex-start;
+  gap: 0.35rem;
+  margin-top: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.hud-line.hud-sub .hud-k {
+  opacity: 0.75;
+}
+
+/* A figure that has drifted far enough to matter, e.g. watch-cache lag. */
+.hud-line.warn .hud-v {
+  color: var(--k8-backoff);
+}
+
+.hud-panel.bad .hud-badge {
+  color: var(--k8-failed);
+  border-color: color-mix(in srgb, var(--k8-failed) 55%, transparent);
+  background: color-mix(in srgb, var(--k8-failed) 14%, transparent);
+}
+
+/* ---------------------------------------------------------------------------
+ * Capacity gauges: requested (bar) against allocatable (track), used (tick).
+ * -------------------------------------------------------------------------*/
+
+.hud-gauge {
+  margin: 0.5rem 0 0.15rem;
+}
+
+.hud-track {
+  position: relative;
+  height: 7px;
+  margin: 0.25rem 0 0.2rem;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--k8-text) 10%, transparent);
+  border: 1px solid var(--k8-border);
+}
+
+.hud-track.thin {
+  height: 5px;
+  flex: 1;
+  margin: 0;
+}
+
+.hud-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  border-radius: 3px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--hue, var(--k8-accent)) 45%, transparent),
+    var(--hue, var(--k8-accent))
+  );
+  box-shadow: 0 0 10px color-mix(in srgb, var(--hue, var(--k8-accent)) 45%, transparent);
+}
+
+.hud-gauge.over .hud-fill {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--k8-failed) 45%, transparent),
+    var(--k8-failed)
+  );
+}
+
+/* Actual usage. A different mark on purpose: it is a different fact from the
+ * requests the scheduler reserved, and the two are routinely confused. */
+.hud-tick {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  left: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--k8-text);
+  opacity: 0.85;
+  border-radius: 1px;
+}
+
+.hud-foot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-family: var(--k8-mono);
+  font-size: 10.5px;
+  color: var(--k8-dim);
+}
+
+.hud-used {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3em;
+}
+
+.hud-pct {
+  font-variant-numeric: tabular-nums;
+  color: var(--k8-text);
+}
+
+.hud-queue {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.32rem 0;
+}
+
+.hud-queue .hud-k {
+  width: 6.6em;
+}
+
+.hud-alarm {
+  display: none;
+  margin: 0.4rem 0 0;
+  padding: 0.3rem 0.4rem;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--k8-failed);
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--k8-failed) 45%, transparent);
+  background: color-mix(in srgb, var(--k8-failed) 12%, transparent);
+}
+
+.hud-alarm.on {
+  display: block;
+}
+
+/* ---------------------------------------------------------------------------
+ * API outcome mix. Green happened; red did not; amber will be retried.
+ * -------------------------------------------------------------------------*/
+
+.hud-mix {
+  display: flex;
+  height: 6px;
+  margin: 0.35rem 0 0.35rem;
+  border-radius: 3px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--k8-text) 10%, transparent);
+}
+
+.hud-seg {
+  width: 0;
+  height: 100%;
+}
+
+.hud-seg[data-outcome="ok"] {
+  background: var(--k8-ready);
+}
+.hud-seg[data-outcome="forbidden"] {
+  background: var(--k8-failed);
+}
+.hud-seg[data-outcome="unauthorized"] {
+  background: color-mix(in srgb, var(--k8-failed) 68%, #000);
+}
+.hud-seg[data-outcome="rejected"] {
+  background: color-mix(in srgb, var(--k8-failed) 82%, var(--k8-pending));
+}
+.hud-seg[data-outcome="conflict"] {
+  background: var(--k8-pending);
+}
+
+.hud-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.6rem;
+  font-family: var(--k8-mono);
+  font-size: 10px;
+  color: var(--k8-dim);
+}
+
+.hud-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+}
+
+.hud-legend-item b {
+  color: var(--k8-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-legend-item[data-outcome="ok"] {
+  color: var(--k8-ready);
+}
+.hud-legend-item[data-outcome="forbidden"],
+.hud-legend-item[data-outcome="unauthorized"],
+.hud-legend-item[data-outcome="rejected"] {
+  color: var(--k8-failed);
+}
+.hud-legend-item[data-outcome="conflict"] {
+  color: var(--k8-pending);
+}
+
+/* ---------------------------------------------------------------------------
+ * Top strip.
+ * -------------------------------------------------------------------------*/
+
+#hud-top {
+  top: 0;
+  left: 0;
+  right: 0;
+}
+
+.hud-strip {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--k8-border);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--k8-bg) 88%, transparent),
+    color-mix(in srgb, var(--k8-bg) 40%, transparent)
+  );
+  backdrop-filter: blur(12px) saturate(1.15);
+  /* The strip spans the viewport; only its cells may swallow a drag. */
+  pointer-events: none;
+}
+
+.hud-strip > * {
+  pointer-events: auto;
+}
+
+.hud-brand {
+  display: flex;
+  align-items: baseline;
+  gap: 0.22em;
+  margin-right: 0.4rem;
+  user-select: none;
+}
+
+.hud-brand-mark {
+  font-family: var(--k8-mono);
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--k8-bg);
+  background: var(--k8-accent);
+  border-radius: 4px;
+  padding: 0 0.28em;
+  box-shadow: 0 0 16px color-mix(in srgb, var(--k8-accent) 45%, transparent);
+}
+
+.hud-brand-word {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  color: var(--k8-dim);
+}
+
+.hud-cell {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4em;
+  padding: 0.24rem 0.55rem;
+  border: 1px solid var(--k8-border);
+  border-radius: 7px;
+  background: var(--k8-panel);
+  white-space: nowrap;
+}
+
+.hud-cell.bad {
+  border-color: color-mix(in srgb, var(--k8-failed) 55%, transparent);
+  background: color-mix(in srgb, var(--k8-failed) 12%, var(--k8-panel));
+}
+
+.hud-cell.bad .hud-n {
+  color: var(--k8-failed);
+}
+
+.hud-cell.warn .hud-v {
+  color: var(--k8-backoff);
+}
+
+.hud-spacer {
+  flex: 1;
+  min-width: 0;
+  pointer-events: none;
+}
+
+.hud-phases {
+  gap: 0.55em;
+}
+
+.hud-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32em;
+  font-family: var(--k8-mono);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-chip b {
+  font-weight: 650;
+  color: var(--k8-text);
+}
+
+.hud-chip-label {
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--k8-dim);
+}
+
+.hud-chip[data-phase="running"] {
+  color: var(--k8-ready);
+}
+.hud-chip[data-phase="pending"] {
+  color: var(--k8-pending);
+}
+.hud-chip[data-phase="failed"] {
+  color: var(--k8-failed);
+}
+.hud-chip[data-phase="terminating"] {
+  color: var(--k8-terminating);
+}
+
+.hud-transport {
+  gap: 0.45em;
+  font-family: var(--k8-mono);
+}
+
+.hud-transport-icon {
+  color: var(--k8-ready);
+  font-size: 10px;
+  letter-spacing: -0.08em;
+}
+
+.hud-transport-state {
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--k8-dim);
+}
+
+.hud-transport-scale {
+  font-size: 12px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-transport.paused {
+  border-color: color-mix(in srgb, var(--k8-pending) 60%, transparent);
+  background: color-mix(in srgb, var(--k8-pending) 14%, var(--k8-panel));
+}
+
+.hud-transport.paused .hud-transport-icon,
+.hud-transport.paused .hud-transport-state {
+  color: var(--k8-pending);
+}
+
+.hud-selected .hud-v {
+  color: var(--k8-dim);
+  font-family: var(--k8-sans);
+  font-weight: 500;
+  font-size: 12px;
+}
+
+.hud-selected.on {
+  border-color: color-mix(in srgb, var(--k8-accent) 55%, transparent);
+}
+
+.hud-selected.on .hud-v {
+  color: var(--k8-accent);
+}
+
+/* ---------------------------------------------------------------------------
+ * Side columns.
+ * -------------------------------------------------------------------------*/
+
+#hud-left,
+#hud-right {
+  top: 3.1rem;
+  bottom: 8.5rem;
+  width: 18.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0 0.6rem;
+  overflow: hidden;
+}
+
+#hud-left {
+  left: 0;
+}
+
+#hud-right {
+  right: 0;
+  transition: transform 0.22s ease;
+}
+
+/* ---------------------------------------------------------------------------
+ * Event ticker.
+ * -------------------------------------------------------------------------*/
+
+#hud-bottom {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 0 0.6rem 0.55rem;
+}
+
+.hud-ticker {
+  max-width: 74rem;
+  padding: 0.45rem 0.65rem 0.5rem;
+  border: 1px solid var(--k8-border);
+  border-radius: var(--k8-radius);
+  background: linear-gradient(180deg, var(--k8-panel), var(--k8-panel-2));
+  box-shadow: var(--k8-shadow);
+  backdrop-filter: blur(14px) saturate(1.2);
+  /* Read-only: never steal a camera drag that starts here. */
+  pointer-events: none;
+}
+
+.hud-ticker-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin-bottom: 0.3rem;
+}
+
+.hud-ev {
+  display: none;
+  grid-template-columns: 2.6rem 10.5rem minmax(6rem, 12rem) 1fr auto;
+  align-items: baseline;
+  gap: 0.55rem;
+  padding: 0.12rem 0 0.12rem 0.45rem;
+  border-left: 2px solid transparent;
+  font-family: var(--k8-mono);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.hud-ev.on {
+  display: grid;
+}
+
+.hud-ev-age {
+  color: var(--k8-dim);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.hud-ev-reason {
+  color: var(--k8-ready);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hud-ev-obj {
+  color: var(--k8-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hud-ev-msg {
+  color: var(--k8-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hud-ev-count {
+  display: none;
+  color: var(--k8-dim);
+}
+
+.hud-ev-count.on {
+  display: inline;
+}
+
+.hud-ev-count.on::before {
+  content: "×";
+  opacity: 0.6;
+}
+
+.hud-ev.warn {
+  border-left-color: var(--k8-failed);
+  background: color-mix(in srgb, var(--k8-failed) 8%, transparent);
+}
+
+.hud-ev.warn .hud-ev-reason {
+  color: var(--k8-failed);
+}
+
+.hud-ev.warn .hud-ev-msg {
+  color: color-mix(in srgb, var(--k8-text) 78%, transparent);
+}
+
+/* ---------------------------------------------------------------------------
+ * Toasts.
+ * -------------------------------------------------------------------------*/
+
+.hud-toast {
+  font-family: var(--k8-sans);
+  font-size: 12px;
+  color: var(--k8-text);
+  padding: 0.45rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid var(--k8-border);
+  background: var(--k8-panel-2);
+  box-shadow: var(--k8-shadow);
+  animation: hud-toast-in 0.18s ease-out;
+}
+
+.hud-toast.warn {
+  border-color: color-mix(in srgb, var(--k8-pending) 60%, transparent);
+  color: var(--k8-pending);
+}
+
+.hud-toast.error {
+  border-color: color-mix(in srgb, var(--k8-failed) 60%, transparent);
+  color: var(--k8-failed);
+}
+
+@keyframes hud-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud-toast {
+    animation: none;
+  }
+  #hud-right {
+    transition: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Small viewports. An instrument panel and a city do not both fit on a phone,
+ * and the city is the thing being taught, so the columns stand down first.
+ * -------------------------------------------------------------------------*/
+
+@media (max-width: 1000px) {
+  #hud-left,
+  #hud-right {
+    width: 15.5rem;
+  }
+  .hud-chip-label {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  #hud-left,
+  #hud-right {
+    display: none;
+  }
+  .hud-ev {
+    grid-template-columns: 2.4rem 9rem 1fr;
+  }
+  .hud-ev-msg,
+  .hud-ev-count.on {
+    display: none;
+  }
+}
