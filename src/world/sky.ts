@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import type { SimState } from '../core/types'
-import { COLOR, setMode } from '../core/theme'
+import { COLOR, getMode, setMode } from '../core/theme'
 import type { ThemeMode } from '../core/theme'
 import { ANCHOR, CITY } from './layout'
 import type { WorldCtx, WorldModule } from './module'
@@ -200,7 +200,9 @@ export function createSky(ctx: WorldCtx): WorldModule {
     setMode(mode)
     apply(mode)
   })
-  apply('night')
+  /* Read the live theme, never a literal: the default lives in core/theme.ts,
+   * and hard-coding 'night' here put a black sky over a daylight city. */
+  apply(getMode())
 
   /* The sky is the one thing here with no Kubernetes meaning, and saying so is
    * worth an entry: a reader should never hunt for a mechanism that is absent. */

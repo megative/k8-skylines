@@ -38,7 +38,10 @@ import type { ApiStage, ControllerId, DistrictId } from '../core/types'
 export const CITY = {
   /** How far the ground plane and its grid extend. */
   ground: 1800,
-  fog: { near: 300, far: 1500 },
+  /* The far plane must sit well beyond the establishing shot's camera distance
+   * (engine/camera.ts HOME_DIST), or the whole city renders inside the fog and
+   * reads as a pale smear instead of a plan. */
+  fog: { near: 900, far: 3200 },
 
   /** The control-plane mesa: raised ground the control plane stands on. */
   mesa: { z: -300, w: 760, d: 300, top: 6 },

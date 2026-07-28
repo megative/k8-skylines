@@ -179,8 +179,12 @@ const STEP_DOWN = 4.5
 /* The establishing shot: south of the city centre, looking north, so the node
  * blocks are in the foreground and the control plane sits behind them exactly
  * as the city plan is drawn. */
-const HOME_DIST = 620
-const HOME_PITCH = -0.48
+/* The city spans roughly 900 units across and 960 deep. At 620 the frame cut
+ * off the outer districts, which left a first-time visitor with no idea what
+ * they were looking at or which way to drag; the establishing shot has to
+ * establish. */
+const HOME_DIST = 1180
+const HOME_PITCH = -0.6
 
 /* The overview frames the teaching core — control-plane mesa through the node
  * grid — not the outlying yards, which are only reachable by name anyway. */

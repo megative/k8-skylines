@@ -121,9 +121,13 @@ export function createLabels(gfx: Gfx, registry: Registry, container: HTMLElemen
     const box = document.createElement('div')
     box.style.cssText =
       'transform:translate(-50%,-100%);white-space:nowrap;padding:2px 7px 3px;border-radius:4px;' +
-      `background:rgba(8,11,18,.46);border:1px solid ${edge}59;color:${text};` +
+      /* Custom properties, not the JS theme colours: a label chip must follow a
+       * theme flip without rebuilding the pool, and dark chips over a daylight
+       * city read as holes punched in the scene. */
+      'background:var(--k8-label-bg,rgba(8,11,18,.46));border:1px solid var(--k8-label-edge,#4a5a7059);' +
+      'color:var(--k8-text,#e8eef6);' +
       'font:500 12px/1.3 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;' +
-      'letter-spacing:.01em;text-shadow:0 1px 3px rgba(0,0,0,.85);'
+      'letter-spacing:.01em;text-shadow:var(--k8-label-shadow,0 1px 3px rgba(0,0,0,.85));'
 
     const tEl = document.createElement('span')
     tEl.style.cssText = 'display:block;'

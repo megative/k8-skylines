@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import type { DistrictId, Explainer, SimState } from '../core/types'
-import { COLOR, glass, mat, neon, setMode, structural } from '../core/theme'
+import { COLOR, getMode, glass, mat, neon, setMode, structural } from '../core/theme'
 import { ANCHOR, CITY, DISTRICTS, inPit } from './layout'
 import type { WorldCtx, WorldModule } from './module'
 
@@ -771,7 +771,9 @@ export function createGround(ctx: WorldCtx): WorldModule {
     }
     applyGridColor(mode)
   })
-  applyGridColor('night')
+  /* Read the live theme, never a literal: the default lives in core/theme.ts,
+   * and hard-coding 'night' here left the grid dark under a daylight city. */
+  applyGridColor(getMode())
 
   /* ----------------------------------------------------------------- update */
 
