@@ -90,7 +90,12 @@ export const MODEL = {
   /** Cap on ClusterEvent history kept in SimState. */
   eventCap: 240,
   /** Two identical events inside this window aggregate instead of repeating. */
-  eventAggregateSeconds: 6,
+  /* Kubernetes aggregates an identical (object, reason) for ten minutes and
+   * climbs `count` rather than repeating the row. Six seconds was shorter than
+   * the very intervals the model produces — a CrashLoopBackOff backs off for
+   * 10s, then 20s, then 40s — so the canonical high-count event never once
+   * aggregated and the count column always read 1. */
+  eventAggregateSeconds: 600,
 } as const
 
 /* ---------------------------------------------------------------------------
@@ -410,6 +415,12 @@ export interface Store {
   cmAttemptAt: number
   schedAttemptAt: number
   evictClock: number[]
+  /**
+   * Node index -> model seconds the machine has been out of the cluster. This
+   * is PodGC's quarantine, not an eviction timer: it only decides when PodGC
+   * stops suspecting a stale cache and accepts that the Node is really gone.
+   */
+  nodeAbsentFor: number[]
   proxySync: number[]
   /** uid -> the readiness the kubelet last reported through the API. */
   reportedReady: Map<string, boolean>
@@ -508,6 +519,7 @@ export function createStore(controllerOrder: ControllerId[]): Store {
     cmAttemptAt: 0,
     schedAttemptAt: 0,
     evictClock: new Array<number>(N_NODES).fill(0),
+    nodeAbsentFor: new Array<number>(N_NODES).fill(0),
     proxySync: new Array<number>(N_NODES).fill(0),
     reportedReady: new Map(),
     rpsPerPod: { web: 0, api: 0, db: 0, coredns: 0, 'node-exporter': 0, migrate: 0, report: 0 },
@@ -542,6 +554,50 @@ export function createStore(controllerOrder: ControllerId[]): Store {
  * describe` actually prints.
  * -------------------------------------------------------------------------*/
 
+/**
+ * The namespace of the object an event names, resolved while that object still
+ * exists. `involved` is always `kind/name`; cluster-scoped kinds return ''.
+ */
+function involvedNamespace(ctx: SimCtx, involved: string): string {
+  const cut = involved.indexOf('/')
+  if (cut <= 0) return ''
+  const kind = involved.slice(0, cut)
+  const name = involved.slice(cut + 1)
+  const s = ctx.s
+  switch (kind) {
+    case 'pod': {
+      for (const p of s.pods.values()) if (p.name === name) return p.namespace
+      return ''
+    }
+    case 'deployment':
+      return s.deployments.find((d) => d.name === name)?.namespace ?? ''
+    case 'replicaset':
+      return s.replicaSets.find((r) => r.name === name)?.namespace ?? ''
+    case 'statefulset':
+      return s.statefulSets.find((x) => x.name === name)?.namespace ?? ''
+    case 'daemonset':
+      return s.daemonSets.find((x) => x.name === name)?.namespace ?? ''
+    case 'job':
+      return s.jobs.find((j) => j.name === name)?.namespace ?? ''
+    case 'service':
+      return s.services.find((v) => v.name === name)?.namespace ?? ''
+    case 'ingress':
+      return s.ingresses.find((i) => i.name === name)?.namespace ?? ''
+    case 'hpa':
+      return s.hpas.find((h) => h.name === name)?.namespace ?? ''
+    case 'persistentvolumeclaim':
+    case 'pvc':
+      return s.pvcs.find((c) => c.name === name)?.namespace ?? ''
+    case 'namespace':
+      return name
+    case 'serviceaccount':
+      return name.includes(':') ? name.slice(0, name.indexOf(':')) : ''
+    /* Nodes, PersistentVolumes and StorageClasses are cluster-scoped. */
+    default:
+      return ''
+  }
+}
+
 export function emit(
   ctx: SimCtx,
   type: 'Normal' | 'Warning',
@@ -550,8 +606,11 @@ export function emit(
   message: string,
 ): void {
   const events = ctx.s.events
-  /* Real Events aggregate: same reason on the same object bumps `count`. */
-  for (let i = events.length - 1; i >= 0 && i >= events.length - 6; i--) {
+  /* Real Events aggregate: same reason on the same object bumps `count`.
+   * The whole retained window is searched, not the last handful: on a busy
+   * cluster the previous occurrence is hundreds of events back, which is
+   * exactly when aggregation is worth having. */
+  for (let i = events.length - 1; i >= 0; i--) {
     const e = events[i]
     if (e.reason === reason && e.involved === involved && ctx.s.t - e.at < MODEL.eventAggregateSeconds) {
       e.count += 1
@@ -566,6 +625,7 @@ export function emit(
     type,
     reason,
     involved,
+    namespace: involvedNamespace(ctx, involved),
     message,
     at: ctx.s.t,
     count: 1,

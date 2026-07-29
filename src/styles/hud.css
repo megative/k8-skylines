@@ -744,3 +744,171 @@
     display: none;
   }
 }
+
+/* ------------------------------------------------------- collapsible tiles
+ * Data mode opens six read-outs at once. Each is a tile that folds down to
+ * its own title, and what you folded is still folded after a reload. */
+
+.hud-panel-toggle {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.hud-panel-chev {
+  flex: none;
+  width: 0.9rem;
+  color: var(--k8-dim);
+  transition: transform 0.15s ease, color 0.15s ease;
+}
+
+.hud-panel-chev::before {
+  content: "▾";
+  font-size: 0.7rem;
+  line-height: 1;
+}
+
+.hud-panel-toggle:hover .hud-panel-chev {
+  color: var(--k8-text);
+}
+
+.hud-panel.is-collapsed .hud-panel-chev {
+  transform: rotate(-90deg);
+}
+
+.hud-panel.is-collapsed .hud-panel-body {
+  display: none;
+}
+
+/* A folded tile is a title bar, not a tall empty box. */
+.hud-panel.is-collapsed {
+  padding-bottom: 0.45rem;
+}
+
+.hud-panel-toggle:focus-visible {
+  outline: 2px solid var(--k8-accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+/* --------------------------------------------------------- event filters
+ * `kubectl get events` is a firehose. Two toggles and a search box turn it
+ * into something a person can actually watch. */
+
+/*
+ * The ticker surface stays transparent to the pointer so a camera drag that
+ * starts over it still pans the city — that was the original reason for
+ * `pointer-events: none`, and it is still right. Its controls are the
+ * exception: they are the only things in here you are meant to hit, and
+ * without this the clicks fell through to the canvas and moved the camera.
+ */
+.hud-ev-filters,
+.hud-ev-btn,
+.hud-ev-sel,
+.hud-ev-search {
+  pointer-events: auto;
+}
+
+.hud-ev-filters {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-left: auto;
+}
+
+.hud-ev-btn {
+  appearance: none;
+  border: 1px solid var(--k8-border);
+  border-radius: 6px;
+  padding: 0.14rem 0.45rem;
+  font: inherit;
+  font-size: 0.66rem;
+  letter-spacing: 0.03em;
+  color: var(--k8-dim);
+  background: transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.hud-ev-btn:hover {
+  color: var(--k8-text);
+}
+
+.hud-ev-btn.on {
+  color: #04121a;
+  background: var(--k8-accent);
+  border-color: transparent;
+  font-weight: 600;
+}
+
+/* Level chips carry the colour of what they show, so the filter and the rows
+ * it reveals cannot disagree about what a Warning looks like. */
+.hud-ev-btn.lvl-warning.on {
+  background: var(--k8-failed);
+  color: #1a0508;
+}
+
+.hud-ev-btn.lvl-normal.on {
+  background: var(--k8-dim);
+  color: #04121a;
+}
+
+.hud-ev-sel {
+  border: 1px solid var(--k8-border);
+  border-radius: 6px;
+  padding: 0.14rem 0.3rem;
+  background: color-mix(in srgb, var(--k8-panel-2) 60%, transparent);
+  color: var(--k8-text);
+  font-family: var(--k8-mono);
+  font-size: 0.66rem;
+  max-width: 8.5rem;
+}
+
+.hud-ev-sel:focus-visible {
+  outline: 1px solid var(--k8-accent);
+}
+
+.hud-ev-search {
+  width: 9rem;
+  padding: 0.16rem 0.45rem;
+  border: 1px solid var(--k8-border);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--k8-panel-2) 60%, transparent);
+  color: var(--k8-text);
+  font-family: var(--k8-mono);
+  font-size: 0.66rem;
+}
+
+.hud-ev-search::placeholder {
+  color: var(--k8-dim);
+}
+
+.hud-ev-search:focus-visible {
+  outline: 1px solid var(--k8-accent);
+  outline-offset: 0;
+}
+
+/* Narrow viewports keep the level chips — the question people ask most — and
+ * drop the rest rather than wrapping the ticker into two rows. */
+@media (max-width: 1100px) {
+  .hud-ev-search {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .hud-ev-sel {
+    display: none;
+  }
+}

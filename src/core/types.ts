@@ -48,6 +48,12 @@ export const TIMING = {
   nodeMonitorGraceSeconds: 40,
   /** Default toleration for node.kubernetes.io/not-ready before eviction. */
   notReadyTolerationSeconds: 300,
+  /**
+   * PodGC waits this long before it believes a missing Node is really gone
+   * rather than merely missing from its cache. It is a guard against a stale
+   * informer, not a grace period, and nothing tolerates it.
+   */
+  podGcQuarantineSeconds: 40,
   /** CrashLoopBackOff doubles from here... */
   crashBackoffStartSeconds: 10,
   /** ...and is capped here. */
@@ -766,6 +772,16 @@ export interface ClusterEvent {
   reason: string
   /** Object the event is about, e.g. "pod/web-7d9f-x2k". */
   involved: string
+  /**
+   * The involved object's namespace, resolved when the event is emitted.
+   *
+   * Real events carry `involvedObject.namespace`, and for the same reason this
+   * one does: events outlive the objects they describe. Resolving it later, at
+   * render time, loses the namespace for every event about a pod that has since
+   * been replaced — and those are most of the events anyone goes looking for.
+   * Empty for cluster-scoped objects, which genuinely have none.
+   */
+  namespace: string
   message: string
   /** Model seconds at which it was emitted. */
   at: number
@@ -938,6 +954,12 @@ export interface SimState {
     podsFailed: number
     podsTerminating: number
     nodesReady: number
+    /**
+     * Machines in the cluster. Absent machines are not counted here or in
+     * `nodesReady`: a three-node cluster is not a four-node cluster with a
+     * casualty, and a readout of "3 / 4" would say it was.
+     */
+    nodesTotal: number
     cpuRequestedMilli: number
     cpuAllocatableMilli: number
     memRequestedMib: number

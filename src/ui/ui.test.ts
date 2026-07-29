@@ -357,6 +357,7 @@ function fixture(): SimState {
       podsFailed: 0,
       podsTerminating: 0,
       nodesReady: 4,
+      nodesTotal: 4,
       cpuRequestedMilli: 3600,
       cpuAllocatableMilli: 14400,
       memRequestedMib: 4096,
@@ -370,6 +371,7 @@ const event = (id: number, type: 'Normal' | 'Warning', reason: string): ClusterE
   id,
   type,
   reason,
+  namespace: 'shop',
   involved: 'pod/web-7d9f-x2k4b',
   message: 'something happened',
   at: 290,
@@ -462,6 +464,23 @@ describe('createHud', () => {
     const texts = walk(left).map((e) => e.textContent)
     expect(texts).toContain('3.6')
     expect(texts).toContain('14.4')
+  })
+
+  it('counts nodes against the cluster, not against the city', () => {
+    const s = fixture()
+    /* Two machines were removed. Nothing failed, so the readout must be
+     * "2 / 2" and calm; "2 / 4" in red would describe a casualty. */
+    s.totals.nodesReady = 2
+    s.totals.nodesTotal = 2
+    hud.update(s, 1)
+
+    const top = mounts.get('hud-top')!
+    const cell = walk(top)
+      .filter((e) => e.classList.contains('hud-cell'))
+      .find((e) => walk(e).some((c) => c.textContent === 'nodes'))!
+    expect(walk(cell).map((e) => e.textContent)).toContain('2')
+    expect(walk(cell).some((e) => e.textContent === String(s.nodes.length))).toBe(false)
+    expect(cell.classList.contains('bad')).toBe(false)
   })
 
   it('marks lost quorum on the etcd panel', () => {

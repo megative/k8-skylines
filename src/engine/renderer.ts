@@ -51,9 +51,21 @@ export interface Gfx {
 /** Objects whose material is emissive above 1.0 are drawn into the bloom source. */
 const BLOOM_LAYER = 1
 
-/* Near/far give a 1:8400 depth range: close enough to stand 0.5 m from a wall
- * at walking height, far enough to hold the whole city at overview altitude. */
-const NEAR = 0.5
+/*
+ * Depth precision, and why this number moved.
+ *
+ * A depth buffer spends its precision hyperbolically: almost all of it sits in
+ * the first slice in front of the near plane. At NEAR = 0.5 with FAR = 4200 —
+ * a 1:8400 range — the city, which lives 300 to 1200 units out, was competing
+ * for the last few representable values, and coplanar surfaces out there
+ * flickered against each other as the camera moved.
+ *
+ * That 0.5 existed so a walking camera could stand half a metre from a wall.
+ * Walk mode is gone and orbit cannot come closer than MIN_DIST, so nothing
+ * needs it any more. At NEAR = 4 the range is 1:1050 and the far half of the
+ * city gets roughly eight times the depth resolution it had.
+ */
+const NEAR = 4
 const FAR = 4200
 const DEFAULT_FOV = 48
 

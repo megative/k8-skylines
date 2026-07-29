@@ -149,6 +149,7 @@ function makeState(): SimState {
       podsFailed: 0,
       podsTerminating: 0,
       nodesReady: N_NODES,
+      nodesTotal: N_NODES,
       cpuRequestedMilli: 0,
       cpuAllocatableMilli: 0,
       memRequestedMib: 0,

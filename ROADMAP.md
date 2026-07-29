@@ -39,6 +39,29 @@ the relevant `Explainer`, where the reader meets it, not in a footnote here.
   surface that carries the same lesson without the 3D scene.
 - **Mobile.** Touch controls exist but are under-tested on real hardware.
 
+## Known defects
+
+- **DaemonSet pods survive a `NoExecute` taint for the wrong reason.** When a
+  node goes unreachable, its pods are correctly evicted after the 300 s
+  `node.kubernetes.io/unreachable` toleration, and the DaemonSet pod correctly
+  stays. But the modelled pod carries only a `*:NoSchedule` toleration, and a
+  NoSchedule toleration does not protect against NoExecute eviction. Real
+  Kubernetes gives DaemonSet pods explicit `not-ready` and `unreachable`
+  `NoExecute` tolerations with no `tolerationSeconds`. The outcome is right and
+  the data behind it is not, which is exactly the kind of thing the inspector
+  would eventually be asked to explain.
+
+## Wanted
+
+- **Delete a resource and let the cluster carry on.** A machine can be taken out
+  of the cluster and put back, but nothing else can: there is no way to delete
+  the Ingress and watch external traffic stop reaching the Services, or to
+  delete a Service and watch its rule tables disappear from every node while the
+  pods behind it keep running. Deletion is how most people first learn what an
+  object was actually doing, and its absence is the biggest gap in the failure
+  curriculum. It needs a delete path through the API pipeline, owner-reference
+  cascade in the garbage collector, and a way to put the object back.
+
 ## Known limitations
 
 - The node grid is four blocks. Topology spread, zones, and rack awareness have

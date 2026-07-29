@@ -1172,7 +1172,7 @@ export function createNodes(ctx: WorldCtx): WorldModule {
       detail: [
         'A Node object is a record *of* a machine, created and kept current by the kubelet running on it. The scheduler writes a pod\'s `spec.nodeName`; the kubelet on that node sees it through its watch on the API server and starts the work. There is no channel from the control plane to the node.',
         'Every structure on this block is one process or one kernel facility: kubelet and its Lease, the CRI runtime and its image cache, kube-proxy\'s rule table, the CNI bridge that owns pod networking, the CSI node plugin, and cAdvisor\'s meter. The pods themselves stand on the plots in the middle.',
-        'Deleting a Node object does not stop the machine. It makes the control plane forget it; the pods that were bound to it become orphans that the node lifecycle controller cleans up, and a kubelet that is still alive will simply re-register.',
+        'Deleting a Node object does not stop the machine. It makes the control plane forget it, and a kubelet that is still alive will simply re-register. The pods that were bound to it are orphans: PodGC waits out a short quarantine, confirms the Node really is gone, and force deletes them. That is not an eviction — there is no NotReady condition and no `NoExecute` taint anywhere in the story, so nothing tolerates it and nothing waits 300 seconds.',
       ],
       caveats: [
         'This model draws 12 pod plots; kubelet\'s real default cap is 110 (`--max-pods`).',
@@ -1182,6 +1182,20 @@ export function createNodes(ctx: WorldCtx): WorldModule {
       metrics: (s) => {
         const n = s.nodes[i]
         if (!n) return []
+        /* No Node object, so there are no conditions to report and no capacity
+         * to count. Printing "Ready: True" for a machine that is not in the
+         * cluster is the same falsehood the nodes readout used to tell. */
+        if (!n.present) {
+          return [
+            { label: 'name', value: n.name },
+            { label: 'in cluster', value: 'no', hint: 'Node object deleted' },
+            {
+              label: 'pods still bound',
+              value: String(n.podUids.length),
+              hint: n.podUids.length > 0 ? 'awaiting PodGC' : '',
+            },
+          ]
+        }
         const ready = conditionStatus(n, 'Ready', 'Unknown')
         return [
           { label: 'name', value: n.name },

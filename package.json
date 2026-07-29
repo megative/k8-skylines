@@ -12,7 +12,8 @@
     "check:text": "node tools/check-text.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
-    "preview": "vite preview --port 4173"
+    "preview": "vite preview --port 4173",
+    "coverage": "vitest run --coverage.enabled --coverage.provider=v8 --coverage.reporter=text --coverage.reporter=html"
   },
   "keywords": [
     "kubernetes",
@@ -27,6 +28,7 @@
   ],
   "devDependencies": {
     "@types/three": "^0.185.0",
+    "@vitest/coverage-v8": "^4.1.10",
     "typescript": "^5.9.2",
     "vite": "^7.1.5",
     "vitest": "^4.1.10"

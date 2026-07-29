@@ -14,7 +14,7 @@
 
 import type { Bus } from '../core/bus'
 import { registry } from '../core/registry'
-import { ETCD_QUORUM, type SimState } from '../core/types'
+import { ETCD_QUORUM, type ClusterEvent, type SimState } from '../core/types'
 import { clamp, formatAge, formatCpu, formatMem, formatMs } from '../core/util'
 
 export interface Hud {
@@ -107,14 +107,85 @@ function make<K extends keyof HTMLElementTagNameMap>(
   return e
 }
 
+/*
+ * Every read-out is a tile, and every tile collapses to its own title.
+ *
+ * Data mode opens six of them at once, which is a wall of numbers rather than
+ * an instrument panel: the reader wants two or three and has no way to put the
+ * rest away. Returning the body rather than the section means callers keep
+ * appending exactly as before and the header stays outside what gets hidden.
+ *
+ * The collapsed set is remembered across reloads. It is a UI preference, not a
+ * measurement: nothing about the reader is stored, only which tiles they shut.
+ */
+const COLLAPSE_KEY = 'k8skylines.collapsed'
+
+function loadCollapsed(): Set<string> {
+  try {
+    const raw = window.localStorage.getItem(COLLAPSE_KEY)
+    return new Set(raw ? (JSON.parse(raw) as string[]) : [])
+  } catch {
+    /* Private mode, disabled storage, corrupt value — all mean "no memory". */
+    return new Set()
+  }
+}
+
+const collapsed = typeof window === 'undefined' ? new Set<string>() : loadCollapsed()
+
+function saveCollapsed(): void {
+  try {
+    window.localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...collapsed]))
+  } catch {
+    /* Not being able to remember is not a reason to fail the toggle. */
+  }
+}
+
 function panel(parent: HTMLElement, title: string, hue: string): HTMLElement {
   const sec = make('section', 'hud-panel')
   sec.style.setProperty('--hue', hue)
+
   const head = make('div', 'hud-panel-head')
-  head.append(make('h2', 'hud-panel-title', title))
-  sec.append(head)
+  const btn = make('button', 'hud-panel-toggle')
+  ;(btn as HTMLButtonElement).type = 'button'
+  btn.append(make('h2', 'hud-panel-title', title))
+  const chev = make('span', 'hud-panel-chev')
+  btn.append(chev)
+  head.append(btn)
+
+  const body = make('div', 'hud-panel-body')
+
+  const apply = (): void => {
+    const shut = collapsed.has(title)
+    sec.classList.toggle('is-collapsed', shut)
+    btn.setAttribute('aria-expanded', shut ? 'false' : 'true')
+    btn.title = shut ? `Show ${title}` : `Hide ${title}`
+  }
+  btn.addEventListener('click', () => {
+    if (collapsed.has(title)) collapsed.delete(title)
+    else collapsed.add(title)
+    saveCollapsed()
+    apply()
+  })
+  apply()
+
+  sec.append(head, body)
   parent.append(sec)
-  return sec
+  TILE.set(body, sec)
+  return body
+}
+
+/*
+ * The tile a body belongs to. State classes go on the tile, not its contents.
+ *
+ * Recorded rather than derived from `parentElement`: the unit tests drive this
+ * module through a DOM stub that models children but not parents, and a lookup
+ * that silently falls back to the body would put the class on the wrong element
+ * only under test — the worst possible place for a difference.
+ */
+const TILE = new WeakMap<HTMLElement, HTMLElement>()
+
+function tileOf(body: HTMLElement): HTMLElement {
+  return TILE.get(body) ?? body
 }
 
 function hint(parent: HTMLElement, text: string): void {
@@ -249,6 +320,26 @@ function tickerRow(parent: HTMLElement): TickerRow {
   }
 }
 
+/** Reused across frames: the picker runs every tick and must not allocate. */
+const picked: ClusterEvent[] = []
+const seenKinds = new Set<string>()
+const seenNamespaces = new Set<string>()
+
+/** `involved` is always `kind/name`, so the kind is free to read off. */
+function kindOf(e: ClusterEvent): string {
+  const i = e.involved.indexOf('/')
+  return i > 0 ? e.involved.slice(0, i) : ''
+}
+
+/** Free-text filter, over the fields a reader actually searches by. */
+function matchesNeedle(e: ClusterEvent, needle: string): boolean {
+  return (
+    e.reason.toLowerCase().includes(needle) ||
+    e.involved.toLowerCase().includes(needle) ||
+    e.message.toLowerCase().includes(needle)
+  )
+}
+
 /* ---------------------------------------------------------------------------
  * The HUD.
  * -------------------------------------------------------------------------*/
@@ -377,7 +468,7 @@ export function createHud(bus: Bus): Hud {
   const quorumBadge = make('span', 'hud-badge')
   quorumVal.append(quorumBadge)
   const quorumLabel = new Label(quorumBadge)
-  const quorumLost = new Flag(etcdPanel, 'bad')
+  const quorumLost = new Flag(tileOf(etcdPanel), 'bad')
   const dbVal = line(etcdPanel, 'db size')
   const db = ratio(dbVal, (v) => `${v.toFixed(0)}Mi`)
   const dbTrack = make('div', 'hud-track thin')
@@ -458,12 +549,111 @@ export function createHud(bus: Bus): Hud {
 
   /* ---- bottom: the cluster narrating itself ---------------------------- */
 
+  /*
+   * The event stream, filtered and sorted.
+   *
+   * `kubectl get events` is a firehose, and reproducing the firehose faithfully
+   * teaches nothing: the line that matters scrolls past while you read the one
+   * above it. Two filters and two orderings turn it into something you can
+   * actually watch — Warnings only when something is wrong, most-frequent when
+   * you want to know what is wrong *repeatedly*.
+   */
   const ticker = make('div', 'hud-ticker')
   const tickerHead = make('div', 'hud-ticker-head')
   tickerHead.append(make('span', 'hud-k', 'events'))
-  tickerHead.append(
-    make('span', 'hud-hint inline', 'kubectl get events — Warning stands out, count aggregates'),
-  )
+
+  /*
+   * Levels are a multi-select, not a single switch: "everything except Normal"
+   * and "only Normal" are both questions a reader has, and a lone Warnings
+   * toggle can only answer one of them.
+   */
+  const levels = new Set<'Normal' | 'Warning'>(['Normal', 'Warning'])
+  let kindFilter = ''
+  let nsFilter = ''
+  let needle = ''
+  let byCount = false
+
+  const seg = make('div', 'hud-ev-filters')
+
+  for (const lvl of ['Normal', 'Warning'] as const) {
+    const b = make('button', `hud-ev-btn lvl-${lvl.toLowerCase()} on`, lvl)
+    ;(b as HTMLButtonElement).type = 'button'
+    b.title = `Show ${lvl} events`
+    b.setAttribute('aria-pressed', 'true')
+    b.addEventListener('click', () => {
+      if (levels.has(lvl)) levels.delete(lvl)
+      else levels.add(lvl)
+      const on = levels.has(lvl)
+      b.classList.toggle('on', on)
+      b.setAttribute('aria-pressed', on ? 'true' : 'false')
+    })
+    seg.append(b)
+  }
+
+  /* Populated from the stream itself: a filter must never offer a value the
+   * cluster has never produced, and never hide one it has. */
+  const kindSel = document.createElement('select')
+  kindSel.className = 'hud-ev-sel'
+  kindSel.setAttribute('aria-label', 'Filter events by resource kind')
+  kindSel.addEventListener('change', () => {
+    kindFilter = kindSel.value
+  })
+
+  const nsSel = document.createElement('select')
+  nsSel.className = 'hud-ev-sel'
+  nsSel.setAttribute('aria-label', 'Filter events by namespace')
+  nsSel.addEventListener('change', () => {
+    nsFilter = nsSel.value
+  })
+
+  /* Counted here rather than read from `sel.options`: this module is unit
+   * tested against a DOM stub that models elements but not the select's own
+   * collections, and reading them made the whole HUD throw under test. */
+  const optionCount = new Map<HTMLSelectElement, number>()
+
+  const refreshOptions = (sel: HTMLSelectElement, seen: Set<string>, allLabel: string): void => {
+    /* Rebuild only when the set actually grew; this runs on the frame path. */
+    if (optionCount.get(sel) === seen.size + 1) return
+    optionCount.set(sel, seen.size + 1)
+    const keep = sel.value
+    sel.textContent = ''
+    const all = document.createElement('option')
+    all.value = ''
+    all.textContent = allLabel
+    sel.append(all)
+    for (const v of [...seen].sort()) {
+      const o = document.createElement('option')
+      o.value = v
+      o.textContent = v
+      sel.append(o)
+    }
+    sel.value = keep
+  }
+
+  seg.append(kindSel, nsSel)
+
+  const sortBtn = make('button', 'hud-ev-btn', 'Most frequent')
+  ;(sortBtn as HTMLButtonElement).type = 'button'
+  sortBtn.title = 'Order by aggregated count instead of by time'
+  sortBtn.setAttribute('aria-pressed', 'false')
+  sortBtn.addEventListener('click', () => {
+    byCount = !byCount
+    sortBtn.classList.toggle('on', byCount)
+    sortBtn.setAttribute('aria-pressed', byCount ? 'true' : 'false')
+  })
+  seg.append(sortBtn)
+
+  const search = document.createElement('input')
+  search.type = 'search'
+  search.className = 'hud-ev-search'
+  search.placeholder = 'reason, object or message'
+  search.setAttribute('aria-label', 'Filter events by text')
+  search.addEventListener('input', () => {
+    needle = search.value.trim().toLowerCase()
+  })
+  seg.append(search)
+
+  tickerHead.append(seg)
   ticker.append(tickerHead)
   const rows: TickerRow[] = []
   for (let i = 0; i < TICKER_ROWS; i++) rows.push(tickerRow(ticker))
@@ -514,9 +704,12 @@ export function createHud(bus: Bus): Hud {
 
     const t = s.totals
 
+    /* The denominator is the cluster, not the geometry. Machines that were
+     * removed are not missing machines, and counting them here would report a
+     * deliberately smaller cluster as a damaged one. */
     nodes.num.set(t.nodesReady)
-    nodes.den.set(s.nodes.length)
-    nodesDegraded.set(t.nodesReady < s.nodes.length)
+    nodes.den.set(t.nodesTotal)
+    nodesDegraded.set(t.nodesReady < t.nodesTotal)
 
     podsRunning.set(t.podsRunning)
     podsPending.set(t.podsPending)
@@ -614,10 +807,53 @@ export function createHud(bus: Bus): Hud {
     cacheLag.set(lag)
     lagHot.set(lag > 5)
 
+    /*
+     * Pick the rows first, then paint. Selection walks backwards from the
+     * newest and stops once the visible rows are full, so the common case
+     * touches a handful of events rather than the whole history.
+     */
     const evs = s.events
+
+    /* Offer only values the cluster has actually produced. */
+    for (let i = 0; i < evs.length; i++) {
+      const k = kindOf(evs[i]!)
+      if (k) seenKinds.add(k)
+      const ns = evs[i]!.namespace
+      if (ns) seenNamespaces.add(ns)
+    }
+    refreshOptions(kindSel, seenKinds, 'all kinds')
+    refreshOptions(nsSel, seenNamespaces, 'all namespaces')
+
+    const passes = (e: ClusterEvent): boolean => {
+      if (!levels.has(e.type)) return false
+      if (kindFilter && kindOf(e) !== kindFilter) return false
+      if (nsFilter && e.namespace !== nsFilter) return false
+      if (needle && !matchesNeedle(e, needle)) return false
+      return true
+    }
+
+    picked.length = 0
+    if (byCount) {
+      /* Ordering by frequency needs the whole set, but only the ones that pass
+       * the filters, and only the top few are ever painted. */
+      for (let i = evs.length - 1; i >= 0; i--) {
+        const e = evs[i]!
+        if (!passes(e)) continue
+        picked.push(e)
+      }
+      picked.sort((a, b) => b.count - a.count || b.at - a.at)
+      picked.length = Math.min(picked.length, TICKER_ROWS)
+    } else {
+      for (let i = evs.length - 1; i >= 0 && picked.length < TICKER_ROWS; i--) {
+        const e = evs[i]!
+        if (!passes(e)) continue
+        picked.push(e)
+      }
+    }
+
     for (let i = 0; i < TICKER_ROWS; i++) {
       const row = rows[i]!
-      const ev = evs[evs.length - 1 - i]
+      const ev = picked[i]
       if (!ev) {
         row.shown.set(false)
         continue

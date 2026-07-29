@@ -179,6 +179,37 @@ describe('labels', () => {
     expect(list.some((l) => l.text.includes('queue'))).toBe(true)
   })
 
+  it('drops a label whose anchor is inside a hidden group', () => {
+    const { gfx, registry, meshes } = scene()
+    gfx.camera.position.set(0, 180, ANCHOR.apiServer[2] + 230)
+    gfx.camera.lookAt(0, 30, ANCHOR.apiServer[2])
+    const labels = createLabels(gfx, registry, container as unknown as HTMLElement)
+    run(labels, 30)
+    expect(shown(container).some((l) => l.text === 'Building number 3')).toBe(true)
+
+    /*
+     * Hidden the way a district hides one of its own: the group goes, not the
+     * anchor. three.js `visible` is per-object, so the anchor's own flag stays
+     * true — and a nameplate left hovering over bare ground is how a machine
+     * removed from the cluster kept announcing itself.
+     */
+    const hide = new THREE.Group()
+    const anchor = meshes[3]
+    gfx.scene.add(hide)
+    hide.add(anchor)
+    hide.visible = false
+    gfx.scene.updateMatrixWorld(true)
+    expect(anchor.visible).toBe(true)
+
+    run(labels, 30)
+    expect(shown(container).some((l) => l.text === 'Building number 3')).toBe(false)
+
+    /* And it comes back when the group does. */
+    hide.visible = true
+    run(labels, 30)
+    expect(shown(container).some((l) => l.text === 'Building number 3')).toBe(true)
+  })
+
   it('never lets two labels overlap', () => {
     const { gfx, registry } = scene()
     gfx.camera.position.set(0, 90, ANCHOR.apiServer[2] + 150)

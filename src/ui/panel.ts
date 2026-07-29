@@ -4,6 +4,8 @@ import { COLOR } from '../core/theme'
 import type { DistrictId, Explainer, Knobs, SimState } from '../core/types'
 import { knobSpec } from './controls'
 import { knobsFor } from './knob-map'
+import { docsFor } from './docs-map'
+import { hasManifest, manifestFor } from './manifest'
 import { DISTRICTS } from '../world/layout'
 
 /* ============================================================================
@@ -158,13 +160,32 @@ export function createPanel(bus: Bus, registry: Registry): Panel {
   const tuneList = el('div', 'pnl-tlist')
   tuneSec.append(tuneHead, tuneList)
 
+  /* The object behind the building, as kubectl would print it. Collapsed by
+   * default: it is the answer to "show me", not something to read past. */
+  const yamlSec = el('section', 'pnl-sec pnl-yaml')
+  const yamlBox = document.createElement('details')
+  const yamlSummary = document.createElement('summary')
+  yamlSummary.className = 'pnl-yaml-summary'
+  yamlSummary.textContent = 'Manifest'
+  const yamlPre = el('pre', 'pnl-yaml-pre')
+  yamlBox.append(yamlSummary, yamlPre)
+  yamlSec.append(yamlBox)
+
+  /* The honest end of an explanation about a model: where to read the real one. */
+  const docsSec = el('section', 'pnl-sec pnl-docs')
+  const docsLink = el('a', 'pnl-docs-link')
+  docsLink.target = '_blank'
+  /* External navigation from an untrusted-ish surface: never hand over the opener. */
+  docsLink.rel = 'noopener noreferrer'
+  docsSec.append(docsLink)
+
   const relatedSec = el('section', 'pnl-sec pnl-related')
   const relatedHead = el('h3', 'pnl-h', 'Related')
   const relatedChips = el('div', 'pnl-chips')
   relatedSec.append(relatedHead, relatedChips)
 
   const body = el('div', 'pnl-body')
-  body.append(summary, metricsSec, tuneSec, detailSec, caveatSec, relatedSec)
+  body.append(summary, metricsSec, tuneSec, detailSec, yamlSec, caveatSec, docsSec, relatedSec)
   article.append(head, body)
   host.appendChild(article)
   host.hidden = true
@@ -205,6 +226,8 @@ export function createPanel(bus: Bus, registry: Registry): Panel {
       'Nothing in the registry explains this id. A mechanism with no Explainer is decoration, and decoration is a bug.'
     metricsSec.hidden = true
     detailSec.textContent = ''
+    yamlSec.hidden = true
+    docsSec.hidden = true
     caveatList.textContent = ''
     caveatList.appendChild(el('li', undefined, MODEL_CAVEAT))
     relatedSec.hidden = true
@@ -285,6 +308,17 @@ export function createPanel(bus: Bus, registry: Registry): Panel {
     }
 
     renderTuning(entry)
+
+    yamlSec.hidden = !hasManifest(entry.id)
+    yamlBox.open = false
+    yamlPre.textContent = ''
+
+    const doc = docsFor(entry.id)
+    docsSec.hidden = doc === undefined
+    if (doc) {
+      docsLink.href = doc.url
+      docsLink.textContent = doc.text
+    }
 
     caveatList.textContent = ''
     const caveats = entry.caveats && entry.caveats.length > 0 ? entry.caveats : [MODEL_CAVEAT]
@@ -461,6 +495,10 @@ export function createPanel(bus: Bus, registry: Registry): Panel {
           if (b.input.value !== String(v)) b.input.value = String(v)
           if (b.out && b.out.textContent !== shown) b.out.textContent = shown
         }
+      }
+      if (current && !yamlSec.hidden && yamlBox.open) {
+        const text = manifestFor(current.id, s)
+        if (text !== undefined && yamlPre.textContent !== text) yamlPre.textContent = text
       }
       if (!current || !current.metrics) return
       const now = performance.now()

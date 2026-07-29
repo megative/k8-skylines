@@ -371,6 +371,10 @@ export function createPods(ctx: WorldCtx): WorldModule {
     const limitCeil = new THREE.Mesh(gBox, P.limitCeil)
     const ghostTower = new THREE.Mesh(gPillar, P.ghostTower)
     const tower = new THREE.Mesh(gPillar, P.towerNew)
+    /* The two halves of the same claim, named so the running container can be
+     * told from the declared one in the debugger and in tests. */
+    tower.name = 'container'
+    ghostTower.name = 'container-ghost'
     const lamp = new THREE.Mesh(gLamp, P.lampOff)
     const cpuTrack = new THREE.Mesh(gPillar, P.cpuTrack)
     const cpuFill = new THREE.Mesh(gPillar, P.cpuFill)
@@ -916,10 +920,22 @@ export function createPods(ctx: WorldCtx): WorldModule {
       lot.rosterSig = sig
     }
 
+    /*
+     * A pod bound to a machine that left the cluster is the same case read from
+     * the other end: the record is still in the API, with a phase and an IP
+     * nothing will ever update again, and there is no kubelet left to run it.
+     * PodGC collects it shortly; until then the gap between the record and the
+     * matter is the whole point, so it is drawn as ghost. A node that is merely
+     * unreachable is deliberately *not* treated this way — there the pods may
+     * genuinely still be running, and not knowing is that lesson.
+     */
+    const home = lot.nodeIndex >= 0 ? s.nodes[lot.nodeIndex] : undefined
+    const nodeGone = home !== undefined && !home.present
+
     /* The sandbox — and therefore the lot — exists only once the kubelet has
      * created it and the CNI has plugged it in. Before that the pod is a record
      * with no matter behind it anywhere in the cluster. */
-    const hasSandbox = pod.ip !== undefined
+    const hasSandbox = pod.ip !== undefined && !nodeGone
     const grow = 0.35 + 0.65 * b
     lot.slab.material = terminating ? P.slabTerm : hasSandbox ? P.slabSolid : P.slabGhost
     lot.slab.scale.set(LOT_W * grow, SLAB_H, LOT_D * grow)
@@ -977,7 +993,7 @@ export function createPods(ctx: WorldCtx): WorldModule {
         continue
       }
       const c = pod.containers[i]
-      const gated = c.role !== 'init' && !initsDone
+      const gated = nodeGone || (c.role !== 'init' && !initsDone)
       u.group.visible = true
       u.group.scale.y = b
       updateUnit(u, c, pod, s, dt, gated)

@@ -198,6 +198,7 @@ function makeState(pods: PodState[], desiredReplicas = pods.length): SimState {
       podsFailed: 0,
       podsTerminating: 0,
       nodesReady: N_NODES,
+      nodesTotal: N_NODES,
       cpuRequestedMilli: 0,
       cpuAllocatableMilli: NODE_CPU_MILLICORES * N_NODES,
       memRequestedMib: 0,
@@ -214,6 +215,22 @@ function makeCtx(): WorldCtx {
     bus: new Bus(),
     rng: new Rng(7),
   }
+}
+
+/**
+ * Container buildings standing as matter near `x,z` — the running containers,
+ * not the `ghost()` that stands in for a declared one that does not exist.
+ */
+function solidNear(root: THREE.Object3D, x: number, z: number, r: number): number {
+  let n = 0
+  root.updateMatrixWorld(true)
+  const v = new THREE.Vector3()
+  root.traverseVisible((o) => {
+    if (!(o instanceof THREE.Mesh) || o.name !== 'container') return
+    o.getWorldPosition(v)
+    if (Math.hypot(v.x - x, v.z - z) < r) n++
+  })
+  return n
 }
 
 /** Depth-first search for a visible mesh whose world position is near `p`. */
@@ -349,6 +366,46 @@ describe('pods district', () => {
     for (let i = 0; i < 60; i++) mod.update(s, 1 / 60)
     expect(next.slot).toBe(0)
     expect(anyVisibleNear(mod.group, want.x, want.z, 6)).toBe(true)
+  })
+
+  it('drops a pod to ghost when the machine under it leaves the cluster', () => {
+    const ctx = makeCtx()
+    const mod = createPods(ctx)
+    const pod = makePod('p1', { nodeName: 'node-2', ip: '10.244.2.7' })
+    const s = makeState([pod])
+    for (let i = 0; i < 120; i++) mod.update(s, 1 / 60)
+
+    const want = podPlotPos(2, 0)
+    expect(solidNear(mod.group, want.x, want.z, 6)).toBeGreaterThan(0)
+
+    /* The machine is removed. The Pod object is untouched — still Running,
+     * still holding its IP — because nothing is left to report otherwise.
+     * PodGC has not collected it yet, so it must still be drawn, and it must
+     * not be drawn as matter: there is no kubelet and no sandbox behind it. */
+    s.nodes[2].present = false
+    for (let i = 0; i < 120; i++) mod.update(s, 1 / 60)
+
+    expect(pod.phase).toBe('Running')
+    expect(anyVisibleNear(mod.group, want.x, want.z, 6)).toBe(true)
+    expect(solidNear(mod.group, want.x, want.z, 6)).toBe(0)
+  })
+
+  it('leaves a pod on a merely unreachable node as matter', () => {
+    const ctx = makeCtx()
+    const mod = createPods(ctx)
+    const pod = makePod('p1', { nodeName: 'node-2', ip: '10.244.2.7' })
+    const s = makeState([pod])
+    for (let i = 0; i < 120; i++) mod.update(s, 1 / 60)
+
+    /* A node that stops answering keeps its Node object. Its pods may well
+     * still be running, and the city must not claim to know that they are not
+     * — that uncertainty is the reason node failure takes 340 seconds. */
+    s.nodes[2].conditions[0].status = 'Unknown'
+    s.nodes[2].taints.push({ key: 'node.kubernetes.io/unreachable', effect: 'NoExecute' })
+    for (let i = 0; i < 120; i++) mod.update(s, 1 / 60)
+
+    const want = podPlotPos(2, 0)
+    expect(solidNear(mod.group, want.x, want.z, 6)).toBeGreaterThan(0)
   })
 
   it('allocates no materials while running, whatever the pods are doing', () => {

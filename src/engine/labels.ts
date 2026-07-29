@@ -76,6 +76,8 @@ interface Cand {
   text: string
   world: THREE.Vector3
   refreshIn: number
+  /** Anchor is on screen at all, ancestors included. Sampled with the anchor. */
+  shown: boolean
   /* Per-frame results. */
   sx: number
   sy: number
@@ -107,6 +109,20 @@ interface Slot {
 }
 
 const css = (hex: number): string => `#${hex.toString(16).padStart(6, '0')}`
+
+/**
+ * three.js `visible` is per-object: hiding a district's group leaves every
+ * descendant's own flag true, so an anchor inside it still reports visible. A
+ * label must not outlive the thing it names — a machine removed from the
+ * cluster kept its nameplate hovering over bare ground. Walked at the anchor
+ * cadence, never per frame.
+ */
+function anchorShown(o: THREE.Object3D): boolean {
+  for (let p: THREE.Object3D | null = o; p !== null; p = p.parent) {
+    if (!p.visible) return false
+  }
+  return true
+}
 
 export function createLabels(gfx: Gfx, registry: Registry, container: HTMLElement): Labels {
   const text = css(COLOR.text)
@@ -182,6 +198,7 @@ export function createLabels(gfx: Gfx, registry: Registry, container: HTMLElemen
          * building; the etcd pit is below grade, so lift from zero. */
         world: new THREE.Vector3(d.center[0], Math.max(d.center[1], 0) + 74, d.center[2]),
         refreshIn: 1 << 30,
+        shown: true,
         sx: 0,
         sy: 0,
         dist: 0,
@@ -204,6 +221,7 @@ export function createLabels(gfx: Gfx, registry: Registry, container: HTMLElemen
         text: e.title,
         world: new THREE.Vector3(),
         refreshIn: 0,
+        shown: true,
         sx: 0,
         sy: 0,
         dist: 0,
@@ -303,11 +321,12 @@ export function createLabels(gfx: Gfx, registry: Registry, container: HTMLElemen
 
       const obj = c.obj
       if (obj) {
-        if (!obj.visible) continue
         if (--c.refreshIn <= 0) {
           c.refreshIn = ANCHOR_REFRESH
-          obj.getWorldPosition(c.world)
+          c.shown = anchorShown(obj)
+          if (c.shown) obj.getWorldPosition(c.world)
         }
+        if (!c.shown) continue
       }
 
       _view.copy(c.world).applyMatrix4(_viewInv)

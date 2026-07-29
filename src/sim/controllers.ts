@@ -41,6 +41,7 @@ import {
   instantiatePod,
   addPod,
   key,
+  nodeByName,
   podIsReady,
   podIsTerminating,
   podUsedCpu,
@@ -634,6 +635,9 @@ function reconcileDaemonSet(ctx: SimCtx, k: string): boolean {
 
   for (let n = 0; n < ctx.s.nodes.length; n++) {
     const node = ctx.s.nodes[n]
+    /* A DaemonSet places one pod per Node object. A machine outside the
+     * cluster has none, so it is not a target and not a missing replica. */
+    if (!node.present) continue
     let eligible = true
     for (const t of node.taints) {
       if (t.effect === 'PreferNoSchedule') continue
@@ -828,6 +832,10 @@ function reconcileNode(ctx: SimCtx, k: string): boolean {
   for (let i = 0; i < ctx.s.nodes.length; i++) if (ctx.s.nodes[i].name === k) index = i
   if (index < 0) return true
   const node = ctx.s.nodes[index]
+  /* A machine that is not in the cluster has no Node object to reconcile.
+   * Marking it NotReady would be a lie about a machine that never failed, and
+   * the taint it earned would be a lie the scheduler then acts on. */
+  if (!node.present) return true
 
   if (!node.podCidr) node.podCidr = `10.244.${index}.0/24`
 
@@ -993,10 +1001,31 @@ function ownerExists(ctx: SimCtx, uid: string, kind: Kind): boolean {
   return true
 }
 
+/**
+ * Is this pod bound to a machine that left the cluster? Only once the
+ * quarantine has run out: until then PodGC assumes its own cache is behind,
+ * not that a node disappeared.
+ */
+function podGcOrphanedByNode(ctx: SimCtx, nodeName: string): boolean {
+  const i = nodeByName(ctx, nodeName)
+  if (i < 0 || ctx.s.nodes[i].present) return false
+  return ctx.store.nodeAbsentFor[i] > TIMING.podGcQuarantineSeconds
+}
+
 function reconcileGc(ctx: SimCtx, _k: string): boolean {
   const pods = ctx.store.podList
   for (let i = pods.length - 1; i >= 0; i--) {
     const p = pods[i]
+    if (p.nodeName && podGcOrphanedByNode(ctx, p.nodeName)) {
+      /* PodGC force deletes with grace period zero. There is no kubelet left
+       * to run a shutdown, so waiting for one would leave the pod Terminating
+       * forever — the state an operator ends up clearing by hand. Nor is there
+       * a taint to tolerate: a DaemonSet pod goes with the rest, because the
+       * node it was pinned to does not exist. */
+      emit(ctx, 'Normal', 'DeletionByPodGC', `pod/${p.name}`, 'PodGC: node no longer exists')
+      removePod(ctx, p.uid)
+      continue
+    }
     if (p.owner && !ownerExists(ctx, p.owner.uid, p.owner.kind)) {
       /* An orphan: its controller is gone, so the object is garbage. */
       emit(ctx, 'Normal', 'OwnerRefGone', `pod/${p.name}`, `Deleting orphaned pod, owner ${p.owner.kind}/${p.owner.name} not found`)
@@ -1467,6 +1496,14 @@ function tickControllerTimers(ctx: SimCtx, dt: number): void {
   ctx.store.cronClock += dt
   for (let i = 0; i < ctx.s.nodes.length; i++) {
     const node = ctx.s.nodes[i]
+    if (!node.present) {
+      /* No Node object, so no NotReady clock to run. What is counted here is
+       * how long PodGC has been waiting to be sure the node is really gone. */
+      ctx.store.nodeAbsentFor[i] += dt
+      ctx.store.nodeUnreadyFor[i] = 0
+      continue
+    }
+    ctx.store.nodeAbsentFor[i] = 0
     if (node.kubelet.sinceLeaseSeconds > TIMING.nodeMonitorGraceSeconds) {
       ctx.store.nodeUnreadyFor[i] += dt
       /* Nothing on a dead node counts down a grace period, so the control

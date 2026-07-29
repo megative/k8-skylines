@@ -342,6 +342,12 @@ function main(): void {
       rig,
       gfx,
       flows,
+      /* The UI surfaces, so a console session can drive and inspect them the
+       * same way AGENTS.md already documents for the camera and the model. */
+      hud,
+      panel,
+      controls,
+      scenarios,
       THREE,
       version: typeof __K8SKYLINES_VERSION__ === 'string' ? __K8SKYLINES_VERSION__ : 'dev',
       sha: typeof __K8SKYLINES_GIT_SHA__ === 'string' ? __K8SKYLINES_GIT_SHA__ : 'unknown',

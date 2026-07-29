@@ -371,3 +371,89 @@ code.pnl-code {
   line-height: 1.45;
   color: var(--k8-dim, #7f8b9c);
 }
+
+/* ------------------------------------------------------------------ docs
+ * Read the real thing. The city is a model; this is the way out of it. */
+
+.pnl-docs[hidden] {
+  display: none;
+}
+
+.pnl-docs-link {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--k8-accent, #38e8ff);
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--k8-accent, #38e8ff) 40%, transparent);
+  padding-bottom: 1px;
+}
+
+.pnl-docs-link::before {
+  content: "kubernetes.io";
+  font-family: var(--k8-mono, ui-monospace, Menlo, monospace);
+  font-size: 0.66rem;
+  color: var(--k8-dim, #7f8b9c);
+}
+
+.pnl-docs-link::after {
+  content: "↗";
+  font-size: 0.72rem;
+  opacity: 0.7;
+}
+
+.pnl-docs-link:hover {
+  border-bottom-color: var(--k8-accent, #38e8ff);
+}
+
+/* ------------------------------------------------------------- manifest
+ * `kubectl get -o yaml` for the object behind the building. Collapsed by
+ * default: it answers "show me", it is not something to read past. */
+
+.pnl-yaml[hidden] {
+  display: none;
+}
+
+.pnl-yaml-summary {
+  cursor: pointer;
+  font-size: 0.7rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--k8-dim, #7f8b9c);
+  list-style: none;
+}
+
+.pnl-yaml-summary::-webkit-details-marker {
+  display: none;
+}
+
+.pnl-yaml-summary::before {
+  content: "▸ ";
+  display: inline-block;
+  transition: transform 0.15s ease;
+}
+
+.pnl-yaml[hidden] .pnl-yaml-summary::before,
+details[open] > .pnl-yaml-summary::before {
+  content: "▾ ";
+}
+
+.pnl-yaml-summary:hover {
+  color: var(--k8-text, #e8eef6);
+}
+
+.pnl-yaml-pre {
+  margin: 0.5rem 0 0;
+  padding: 0.6rem 0.7rem;
+  max-height: 20rem;
+  overflow: auto;
+  border: 1px solid var(--k8-border, #22303f);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--k8-panel-2, #16202d) 70%, transparent);
+  font-family: var(--k8-mono, ui-monospace, Menlo, monospace);
+  font-size: 0.68rem;
+  line-height: 1.5;
+  white-space: pre;
+  tab-size: 2;
+}

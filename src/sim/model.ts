@@ -565,6 +565,7 @@ export function createState(): SimState {
       podsFailed: 0,
       podsTerminating: 0,
       nodesReady: 0,
+      nodesTotal: N_NODES,
       cpuRequestedMilli: 0,
       cpuAllocatableMilli: 0,
       memRequestedMib: 0,
@@ -732,6 +733,7 @@ function updateTotals(ctx: SimCtx): void {
   t.podsTerminating = terminating
 
   let nodesReady = 0
+  let nodesTotal = 0
   let cpuReq = 0
   let cpuAlloc = 0
   let memReq = 0
@@ -741,6 +743,7 @@ function updateTotals(ctx: SimCtx): void {
     /* A machine that is not in the cluster contributes nothing — not capacity,
      * not a Ready count, and not a missing one. It simply is not there. */
     if (!n.present) continue
+    nodesTotal += 1
     for (let c = 0; c < n.conditions.length; c++) {
       const cond = n.conditions[c]
       if (cond.type === 'Ready' && cond.status === 'True') nodesReady += 1
@@ -751,6 +754,7 @@ function updateTotals(ctx: SimCtx): void {
     memAlloc += n.allocatableMemMib
   }
   t.nodesReady = nodesReady
+  t.nodesTotal = nodesTotal
   t.cpuRequestedMilli = cpuReq
   t.cpuAllocatableMilli = cpuAlloc
   t.memRequestedMib = memReq
@@ -773,7 +777,21 @@ function stepOnce(ctx: SimCtx, dt: number): void {
   /* Cluster membership, derived every tick rather than on knob change, so the
    * flag can never drift from the knob whichever way the knob was set. */
   for (let i = 0; i < ctx.s.nodes.length; i++) {
-    ctx.s.nodes[i].present = i < ctx.s.knobs.nodeCount
+    const present = i < ctx.s.knobs.nodeCount
+    const node = ctx.s.nodes[i]
+    if (node.present === present) continue
+    node.present = present
+    /*
+     * Membership changed, so the Node object did too: one was deleted, or a
+     * kubelet registered a new one. `unschedulable` is the only thing that has
+     * to be dropped by hand — a cordon is written onto the object by an
+     * operator and nothing in the control plane ever clears it, so a cordon
+     * that outlived its Node would keep the scheduler off a machine nobody
+     * cordoned. Conditions and taints need no help: the kubelet and the node
+     * controller re-derive them within a tick. The image cache stays because
+     * the disk does. Pod bindings stay because they are PodGC's to settle.
+     */
+    node.unschedulable = false
   }
 
   const pods = ctx.store.podList

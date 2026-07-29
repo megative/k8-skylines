@@ -27,6 +27,10 @@ import type { WorldCtx, WorldModule } from './module'
 /* The layer catalogue. Real digests are sha256 over the layer's tar; here a
  * layer's identity is its bay, and images are assigned layers deterministically
  * from their reference so the same image always lands on the same bays. */
+/* Enough to give the depth buffer an unambiguous winner over the ground plane,
+ * far too little to read as a step. */
+const APRON_LIFT = 0.12
+
 const N_BASE = 4
 const N_LIB = 6
 const N_APP = 12
@@ -196,7 +200,16 @@ export function createRegistryYard(ctx: WorldCtx): WorldModule {
   /* --------------------------------------------------------------- the yard */
 
   const apron = mesh(box(CITY.registry.w, 1, CITY.registry.d), 'concrete', group)
-  apron.position.y = -0.5
+  /*
+   * Sit a finger above grade, not exactly on it.
+   *
+   * At -0.5 the slab's top face landed on y = 0 — the same plane as the ground
+   * — and two coplanar opaque surfaces have no depth order at all: the card
+   * picks a winner per pixel and picks differently as the camera moves, which
+   * is the flicker across this yard. A real yard is poured above the dirt
+   * anyway, so the lift is honest as well as necessary.
+   */
+  apron.position.y = -0.5 + APRON_LIFT
 
   /* ------------------------------------------------------------ blob bays */
 
