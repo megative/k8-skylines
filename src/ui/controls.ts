@@ -46,7 +46,7 @@ const fmtScale = (v: number): string => `${v}×`
 
 type KnobKind = 'range' | 'toggle' | 'steps'
 
-interface KnobSpec {
+export interface KnobSpec {
   key: keyof Knobs
   label: string
   /** What turning this actually changes in a real cluster. One line. */
@@ -67,12 +67,22 @@ interface KnobGroup {
   knobs: KnobSpec[]
 }
 
+/**
+ * Every knob's definition lives here once. The inspector renders the same
+ * specs inline on a component's card, so a slider cannot describe itself one
+ * way in the rail and another way on the building it belongs to.
+ */
+export function knobSpec(key: keyof Knobs): KnobSpec | undefined {
+  for (const g of GROUPS) for (const k of g.knobs) if (k.key === key) return k
+  return undefined
+}
+
 const GROUPS: KnobGroup[] = [
   {
-    id: 'workload',
-    title: 'Workload',
+    id: 'deployment',
+    title: 'Deployment',
     hue: 'var(--k8-desired)',
-    note: 'A Deployment runs nothing. It is a record whose controller creates a ReplicaSet, which creates Pods — only the Pod ever becomes a building.',
+    note: 'The record you edit. It runs nothing itself: it scales one ReplicaSet up and another down, within this budget.',
     knobs: [
       {
         key: 'replicas',
@@ -85,15 +95,33 @@ const GROUPS: KnobGroup[] = [
         fmt: fmtInt,
       },
       {
-        key: 'trafficRps',
-        label: 'Ingress traffic',
-        why: 'Requests per second arriving from outside. The Service spreads them over ready endpoints only, and their CPU cost is what the HPA reads.',
+        key: 'maxSurge',
+        label: 'maxSurge',
+        why: 'strategy.rollingUpdate.maxSurge — how many Pods may exist above .spec.replicas while a rollout runs.',
         kind: 'range',
         min: 0,
-        max: 600,
-        step: 10,
-        fmt: fmtRps,
+        max: 5,
+        step: 1,
+        fmt: fmtInt,
       },
+      {
+        key: 'maxUnavailable',
+        label: 'maxUnavailable',
+        why: 'strategy.rollingUpdate.maxUnavailable — how many ready Pods the rollout may take away at once.',
+        kind: 'range',
+        min: 0,
+        max: 5,
+        step: 1,
+        fmt: fmtInt,
+      },
+    ],
+  },
+  {
+    id: 'pod',
+    title: 'Pod',
+    hue: 'var(--k8-ready)',
+    note: 'The spec every replica is stamped from. Requests decide where it fits; limits decide how it dies.',
+    knobs: [
       {
         key: 'requestCpuMilli',
         label: 'CPU request',
@@ -135,26 +163,6 @@ const GROUPS: KnobGroup[] = [
         fmt: fmtMem,
       },
       {
-        key: 'maxSurge',
-        label: 'maxSurge',
-        why: 'strategy.rollingUpdate.maxSurge — how many Pods may exist above .spec.replicas while a rollout runs.',
-        kind: 'range',
-        min: 0,
-        max: 5,
-        step: 1,
-        fmt: fmtInt,
-      },
-      {
-        key: 'maxUnavailable',
-        label: 'maxUnavailable',
-        why: 'strategy.rollingUpdate.maxUnavailable — how many ready Pods the rollout may take away at once.',
-        kind: 'range',
-        min: 0,
-        max: 5,
-        step: 1,
-        fmt: fmtInt,
-      },
-      {
         key: 'imagePullSeconds',
         label: 'Image pull time',
         why: 'How long a pull takes when the node has no cached layers. The Pod sits in ContainerCreating for the whole pull.',
@@ -164,14 +172,6 @@ const GROUPS: KnobGroup[] = [
         step: 1,
         fmt: fmtSec,
       },
-    ],
-  },
-  {
-    id: 'probes',
-    title: 'Probes',
-    hue: 'var(--k8-kubelet)',
-    note: 'kubelet runs the probes, not the control plane. A readiness failure is a traffic decision; a liveness failure is a restart.',
-    knobs: [
       {
         key: 'readinessPeriodSeconds',
         label: 'Readiness period',
@@ -202,13 +202,37 @@ const GROUPS: KnobGroup[] = [
         step: 1,
         fmt: fmtInt,
       },
+      {
+        key: 'podAntiAffinity',
+        label: 'Pod anti-affinity',
+        why: 'requiredDuringSchedulingIgnoredDuringExecution on hostname — ask for more replicas than nodes and the surplus stays Pending.',
+        kind: 'toggle',
+      },
+      {
+        key: 'crashLoop',
+        label: 'Crash loop',
+        why: 'The app container exits nonzero at start. kubelet waits 10 s, 20, 40 … capped at 5 min: CrashLoopBackOff.',
+        kind: 'toggle',
+      },
+      {
+        key: 'imagePullFailure',
+        label: 'Image pull failure',
+        why: 'The registry refuses the pull: ErrImagePull, then ImagePullBackOff. The Pod is scheduled and still never runs.',
+        kind: 'toggle',
+      },
+      {
+        key: 'memoryLeak',
+        label: 'Memory leak',
+        why: 'Container memory climbs past its limit. The kernel OOM-kills it, and under node pressure BestEffort Pods are evicted first.',
+        kind: 'toggle',
+      },
     ],
   },
   {
-    id: 'autoscaling',
-    title: 'Autoscaling',
+    id: 'hpa',
+    title: 'HorizontalPodAutoscaler',
     hue: 'var(--k8-controller)',
-    note: 'The HorizontalPodAutoscaler is just another controller: it reads metrics every 15 s and writes .spec.replicas on your behalf.',
+    note: 'Another controller writing .spec.replicas. It measures against requests, never limits.',
     knobs: [
       {
         key: 'hpaEnabled',
@@ -249,26 +273,80 @@ const GROUPS: KnobGroup[] = [
     ],
   },
   {
-    id: 'controlplane',
-    title: 'Control plane',
-    hue: 'var(--k8-api)',
-    note: 'Admission and etcd sit inside every write. When they are slow, every controller in the cluster is slow.',
+    id: 'ingress',
+    title: 'Ingress',
+    hue: 'var(--k8-ingress)',
+    note: 'Traffic arriving from outside. It reaches pods only through ready endpoints.',
     knobs: [
       {
-        key: 'webhookLatencyMs',
-        label: 'Webhook latency',
-        why: 'Round-trip a MutatingWebhookConfiguration adds inside the API request, before the object is ever stored.',
+        key: 'trafficRps',
+        label: 'Ingress traffic',
+        why: 'Requests per second arriving from outside. The Service spreads them over ready endpoints only, and their CPU cost is what the HPA reads.',
         kind: 'range',
         min: 0,
-        max: 2000,
+        max: 600,
         step: 10,
-        fmt: formatMs,
+        fmt: fmtRps,
+      },
+    ],
+  },
+  {
+    id: 'networkpolicy',
+    title: 'NetworkPolicy',
+    hue: 'var(--k8-network)',
+    note: 'Selecting a pod at all makes it default-deny. Nothing else about the cluster changes.',
+    knobs: [
+      {
+        key: 'networkPolicyEnabled',
+        label: 'NetworkPolicy',
+        why: 'Applies a NetworkPolicy. Selecting a Pod at all makes it default-deny for ingress, so anything not listed gets nothing.',
+        kind: 'toggle',
+      },
+    ],
+  },
+  {
+    id: 'node',
+    title: 'Node',
+    hue: 'var(--k8-kubelet)',
+    note: 'The machines. Removing one is not a failure; taking one down is.',
+    knobs: [
+      {
+        key: 'nodeCount',
+        label: 'Worker nodes',
+        why: 'How many machines are in the cluster. Removing one is not a failure: its Node object is gone, so the scheduler never sees it and its capacity was never counted.',
+        kind: 'range',
+        min: 1,
+        max: N_NODES,
+        step: 1,
+        fmt: fmtInt,
       },
       {
-        key: 'webhookReachable',
-        label: 'Webhook reachable',
-        why: 'Whether the webhook’s backing Service has ready endpoints. With failurePolicy: Fail, unreachable means every matching write is rejected.',
-        kind: 'toggle',
+        key: 'nodeDown',
+        label: 'Nodes down',
+        why: 'Stops the kubelet Lease renewal. NotReady after 40 s; the Pods are only evicted after the 300 s not-ready toleration.',
+        kind: 'range',
+        min: 0,
+        max: N_NODES,
+        step: 1,
+        fmt: fmtInt,
+      },
+    ],
+  },
+  {
+    id: 'etcd',
+    title: 'etcd',
+    hue: 'var(--k8-etcd)',
+    note: 'The only durable truth. Below quorum every write fails while cached reads keep serving.',
+    knobs: [
+      {
+        key: 'etcdMembersDown',
+        label: 'etcd members down',
+        why: `Members stopped. Quorum is floor(n/2)+1 = ${ETCD_QUORUM} of ${N_ETCD_MEMBERS}; below it no write commits, though cached reads still serve.`,
+        kind: 'range',
+        min: 0,
+        max: N_ETCD_MEMBERS,
+        step: 1,
+        fmt: fmtInt,
       },
       {
         key: 'etcdFsyncMs',
@@ -280,71 +358,37 @@ const GROUPS: KnobGroup[] = [
         step: 5,
         fmt: formatMs,
       },
-      {
-        key: 'etcdMembersDown',
-        label: 'etcd members down',
-        why: `Members stopped. Quorum is floor(n/2)+1 = ${ETCD_QUORUM} of ${N_ETCD_MEMBERS}; below it no write commits, though cached reads still serve.`,
-        kind: 'range',
-        min: 0,
-        max: N_ETCD_MEMBERS,
-        step: 1,
-        fmt: fmtInt,
-      },
     ],
   },
   {
-    id: 'failure',
-    title: 'Failure injection',
-    hue: 'var(--k8-failed)',
-    note: 'Nobody needs a picture of a healthy cluster. Each switch reproduces a real pathology, with the real reason strings and the real delays.',
+    id: 'apiserver',
+    title: 'kube-apiserver',
+    hue: 'var(--k8-api)',
+    note: 'The one door. An admission webhook sits in the write path of every object it matches.',
     knobs: [
       {
-        key: 'nodeDown',
-        label: 'Nodes down',
-        why: 'Stops the kubelet Lease renewal. NotReady after 40 s; the Pods are only evicted after the 300 s not-ready toleration.',
+        key: 'webhookReachable',
+        label: 'Webhook reachable',
+        why: 'Whether the webhook’s backing Service has ready endpoints. With failurePolicy: Fail, unreachable means every matching write is rejected.',
+        kind: 'toggle',
+      },
+      {
+        key: 'webhookLatencyMs',
+        label: 'Webhook latency',
+        why: 'Round-trip a MutatingWebhookConfiguration adds inside the API request, before the object is ever stored.',
         kind: 'range',
         min: 0,
-        max: N_NODES,
-        step: 1,
-        fmt: fmtInt,
-      },
-      {
-        key: 'crashLoop',
-        label: 'Crash loop',
-        why: 'The app container exits nonzero at start. kubelet waits 10 s, 20, 40 … capped at 5 min: CrashLoopBackOff.',
-        kind: 'toggle',
-      },
-      {
-        key: 'imagePullFailure',
-        label: 'Image pull failure',
-        why: 'The registry refuses the pull: ErrImagePull, then ImagePullBackOff. The Pod is scheduled and still never runs.',
-        kind: 'toggle',
-      },
-      {
-        key: 'memoryLeak',
-        label: 'Memory leak',
-        why: 'Container memory climbs past its limit. The kernel OOM-kills it, and under node pressure BestEffort Pods are evicted first.',
-        kind: 'toggle',
-      },
-      {
-        key: 'networkPolicyEnabled',
-        label: 'NetworkPolicy',
-        why: 'Applies a NetworkPolicy. Selecting a Pod at all makes it default-deny for ingress, so anything not listed gets nothing.',
-        kind: 'toggle',
-      },
-      {
-        key: 'podAntiAffinity',
-        label: 'Pod anti-affinity',
-        why: 'requiredDuringSchedulingIgnoredDuringExecution on hostname — ask for more replicas than nodes and the surplus stays Pending.',
-        kind: 'toggle',
+        max: 2000,
+        step: 10,
+        fmt: formatMs,
       },
     ],
   },
   {
     id: 'transport',
-    title: 'Transport',
-    hue: 'var(--k8-desired)',
-    note: 'The clock, not the cluster. Kubernetes’ own timers keep their real values; only the clock they read moves.',
+    title: 'Model time',
+    hue: 'var(--k8-dim)',
+    note: 'Not a cluster resource: how fast this model runs, and whether it runs at all.',
     knobs: [
       {
         key: 'timeScale',
@@ -564,7 +608,7 @@ export function createControls(bus: Bus, knobs: Knobs): Controls {
     }
 
     /* Group-local read-outs and validity notes. */
-    if (group.id === 'workload') {
+    if (group.id === 'pod') {
       const qosRow = make('p', 'ctl-derived')
       qosRow.append(make('span', 'ctl-k', 'QoS class'))
       const qosName = make('b', 'ctl-qos')
@@ -608,7 +652,7 @@ export function createControls(bus: Bus, knobs: Knobs): Controls {
       })
     }
 
-    if (group.id === 'autoscaling') {
+    if (group.id === 'hpa') {
       const owned = note(
         body,
         'ctl-note-live',
@@ -632,7 +676,7 @@ export function createControls(bus: Bus, knobs: Knobs): Controls {
       })
     }
 
-    if (group.id === 'controlplane') {
+    if (group.id === 'etcd') {
       const lost = note(
         body,
         'ctl-warn',

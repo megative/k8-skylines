@@ -416,6 +416,17 @@ function runFilters(ctx: SimCtx, pod: PodState): number {
     const v = verdicts[n]
     v.nodeName = ctx.s.nodes[n].name
     v.score = undefined
+    /* A machine that is not in the cluster produces no verdict at all. The
+     * scheduler cannot reject a Node object it has never seen, and counting it
+     * as a rejection would make `0/4 nodes are available` lie about the size of
+     * the cluster. */
+    if (!ctx.s.nodes[n].present) {
+      v.passed = false
+      v.reason = undefined
+      v.absent = true
+      continue
+    }
+    v.absent = false
     const reason = filterNode(ctx, n, pod)
     v.passed = reason === undefined
     v.reason = reason
@@ -438,7 +449,9 @@ function aggregateReason(ctx: SimCtx): string {
     if (parts.length > 0) parts += ', '
     parts += `${tally[i]} ${FILTER_REASONS[i]}`
   }
-  return `0/${N_NODES} nodes are available: ${parts}.`
+  /* The denominator is the cluster's real size, not the geometry's capacity:
+   * a three-node cluster must not report `0/4`. */
+  return `0/${ctx.s.knobs.nodeCount} nodes are available: ${parts}.`
 }
 
 function bind(ctx: SimCtx, pod: PodState, nodeIndex: number): void {

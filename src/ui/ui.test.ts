@@ -267,6 +267,7 @@ function node(index: number, ready: boolean): NodeState {
   return {
     name: `node-${index}`,
     index,
+    present: true,
     conditions: [
       { type: 'Ready', status: ready ? 'True' : 'False', reason: 'KubeletReady', sinceSeconds: 60 },
     ],

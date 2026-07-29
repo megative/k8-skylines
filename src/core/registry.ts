@@ -14,6 +14,18 @@ export class Registry {
   /** Reverse index from a picked mesh back to what it explains. */
   private byObject = new WeakMap<THREE.Object3D, Explainer>()
 
+  /**
+   * The exact bound object the last `resolve()` matched.
+   *
+   * An Explainer is a *concept* and is registered once, so its `object` is only
+   * an exemplar — the first pod, the first node. Framing that exemplar meant
+   * clicking anything on the third pod flew the camera to the first one. The
+   * picker resolves from the mesh actually under the cursor, so remembering
+   * where the match happened is enough to frame the instance the reader chose.
+   * Kept here rather than on the bus, which never carries three.js objects.
+   */
+  lastResolved: THREE.Object3D | null = null
+
   register(entry: Explainer): Explainer {
     if (this.byId.has(entry.id)) {
       throw new Error(`registry: duplicate id "${entry.id}"`)
@@ -41,7 +53,10 @@ export class Registry {
     let o: THREE.Object3D | null = object
     while (o) {
       const hit = this.byObject.get(o)
-      if (hit) return hit
+      if (hit) {
+        this.lastResolved = o
+        return hit
+      }
       o = o.parent
     }
     return undefined

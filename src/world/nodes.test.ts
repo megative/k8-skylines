@@ -20,6 +20,7 @@ function makeNode(i: number): NodeState {
   return {
     name: `k8s-node-${i + 1}`,
     index: i,
+    present: true,
     conditions: [
       { type: 'Ready', status: 'True', reason: 'KubeletReady', sinceSeconds: 300 },
       { type: 'MemoryPressure', status: 'False', reason: 'KubeletHasSufficientMemory', sinceSeconds: 300 },

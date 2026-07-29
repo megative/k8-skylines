@@ -618,8 +618,25 @@ export function nodeLabel(ctx: SimCtx, nodeIndex: number, k: string): string | u
   }
 }
 
+/**
+ * Is this machine part of the cluster at all?
+ *
+ * Absent is not the same as down. A down node has a Node object that stopped
+ * reporting, so the control plane notices, waits out its timers and evicts. An
+ * absent node was never registered: the scheduler cannot see it, it adds no
+ * capacity, and nothing about it is a failure. Scaling a cluster down removes
+ * machines; it does not break them.
+ */
+export function nodeIsAbsent(ctx: SimCtx, nodeIndex: number): boolean {
+  return nodeIndex >= ctx.s.knobs.nodeCount
+}
+
 /** Is a node up? A node the operator took down stops renewing its Lease. */
 export function nodeIsDown(ctx: SimCtx, nodeIndex: number): boolean {
+  /* An absent machine runs nothing either, so every runtime path that already
+   * handles "down" handles "not here" for free. The difference lives in the
+   * capacity totals and the conditions, not in the kubelet. */
+  if (nodeIsAbsent(ctx, nodeIndex)) return true
   /* Failures are injected from index 0 so the first block to die is the one
    * the demo Deployment is most likely to be running on. */
   return nodeIndex < ctx.s.knobs.nodeDown
@@ -908,6 +925,10 @@ export function clampKnobs(k: Knobs): void {
   k.timeScale = clamp(k.timeScale, 0, 20)
   k.etcdMembersDown = clamp(Math.round(k.etcdMembersDown), 0, 3)
   k.nodeDown = clamp(Math.round(k.nodeDown), 0, N_NODES)
+  /* At least one machine, or there is no cluster left to look at. */
+  k.nodeCount = clamp(Math.round(k.nodeCount), 1, N_NODES)
+  /* You cannot take down more machines than the cluster has. */
+  k.nodeDown = Math.min(k.nodeDown, k.nodeCount)
   k.hpaMinReplicas = clamp(Math.round(k.hpaMinReplicas), 1, 40)
   k.hpaMaxReplicas = clamp(Math.round(k.hpaMaxReplicas), k.hpaMinReplicas, 48)
   k.probeFailureThreshold = clamp(Math.round(k.probeFailureThreshold), 1, 20)

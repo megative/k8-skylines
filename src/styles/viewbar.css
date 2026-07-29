@@ -4,7 +4,7 @@
 #viewbar {
   position: fixed;
   left: 1rem;
-  bottom: 4.25rem;
+  bottom: 0.55rem;
   z-index: 45;
   display: flex;
   align-items: center;
@@ -114,7 +114,38 @@
   #viewbar {
     left: 0.5rem;
     right: 0.5rem;
-    bottom: 3.5rem;
+    bottom: 0.55rem;
     justify-content: space-between;
   }
+}
+
+/* The theme toggle is a single icon stating the alternative, not a radio pair. */
+.vb-icon {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 1px solid var(--k8-border, #22303f);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--k8-dim, #7f8b9c);
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.vb-icon:hover {
+  color: var(--k8-accent, #38e8ff);
+  background: color-mix(in srgb, var(--k8-accent, #38e8ff) 12%, transparent);
+}
+
+.vb-icon:focus-visible {
+  outline: 2px solid var(--k8-accent, #38e8ff);
+  outline-offset: 2px;
+}
+
+.vb-icon svg {
+  display: block;
 }

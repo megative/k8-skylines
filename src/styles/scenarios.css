@@ -1,0 +1,496 @@
+/* The failure curriculum: a browsable sheet, plus a narration band that stays
+ * over the city once the sheet is closed. Tokens come from tokens.css; this
+ * file defines no colours of its own beyond alpha washes. */
+
+.scn-host {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  display: grid;
+  place-items: center;
+}
+
+.scn-host[hidden] {
+  display: none;
+}
+
+/* Any explicit `display` on a class outranks the user agent's
+ * `[hidden] { display: none }`, so every element this sheet hides by attribute
+ * needs the rule restated. Without it all twelve rows claimed to be running. */
+.scn-host [hidden],
+.scn-band[hidden] {
+  display: none !important;
+}
+
+.scn-scrim {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--k8-bg, #05070c) 62%, transparent);
+  backdrop-filter: blur(6px);
+}
+
+.scn-sheet {
+  position: relative;
+  width: min(1040px, 94vw);
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--k8-border, #22303f);
+  border-radius: calc(var(--k8-radius, 10px) * 1.4);
+  background: var(--k8-panel, #0e1520);
+  box-shadow: var(--k8-shadow, 0 24px 70px rgb(0 0 0 / 55%));
+  color: var(--k8-text, #e8eef6);
+  overflow: hidden;
+}
+
+.scn-sheet:focus {
+  outline: none;
+}
+
+/* ----------------------------------------------------------------- header */
+
+.scn-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.15rem 1.4rem 0.5rem;
+}
+
+.scn-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 0.7rem;
+}
+
+.scn-title {
+  margin: 0;
+  font-size: 1.12rem;
+  font-weight: 620;
+  letter-spacing: 0.01em;
+}
+
+.scn-count {
+  font-family: var(--k8-mono, ui-monospace, Menlo, monospace);
+  font-size: 0.72rem;
+  color: var(--k8-dim, #7f8b9c);
+}
+
+.scn-close {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--k8-dim, #7f8b9c);
+  font-size: 1.4rem;
+  line-height: 1;
+  padding: 0.1rem 0.4rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.scn-close:hover {
+  color: var(--k8-text, #e8eef6);
+  background: color-mix(in srgb, var(--k8-accent, #38e8ff) 14%, transparent);
+}
+
+.scn-intro {
+  margin: 0;
+  padding: 0 1.4rem 0.9rem;
+  font-size: 0.83rem;
+  line-height: 1.55;
+  color: var(--k8-dim, #7f8b9c);
+  max-width: 78ch;
+}
+
+/* ------------------------------------------------------------------- body */
+
+.scn-body {
+  display: grid;
+  grid-template-columns: minmax(280px, 40%) 1fr;
+  min-height: 0;
+  flex: 1;
+  border-top: 1px solid var(--k8-border, #22303f);
+}
+
+.scn-list {
+  overflow-y: auto;
+  border-right: 1px solid var(--k8-border, #22303f);
+  padding: 0.4rem 0;
+}
+
+.scn-group-label {
+  padding: 0.85rem 1.2rem 0.3rem;
+  font-size: 0.62rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--k8-dim, #7f8b9c);
+}
+
+.scn-group-note {
+  padding: 0 1.2rem 0.4rem;
+  font-size: 0.72rem;
+  color: var(--k8-dim, #7f8b9c);
+  opacity: 0.8;
+}
+
+.scn-row {
+  display: block;
+  width: 100%;
+  text-align: left;
+  appearance: none;
+  border: 0;
+  border-left: 2px solid transparent;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 0.5rem 1.2rem 0.6rem;
+  cursor: pointer;
+}
+
+.scn-row:hover {
+  background: color-mix(in srgb, var(--k8-accent, #38e8ff) 8%, transparent);
+}
+
+.scn-row.is-on {
+  background: color-mix(in srgb, var(--k8-accent, #38e8ff) 14%, transparent);
+  border-left-color: var(--k8-accent, #38e8ff);
+}
+
+.scn-row-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.scn-row-title {
+  font-size: 0.86rem;
+  font-weight: 560;
+}
+
+.scn-row-blurb {
+  margin-top: 0.15rem;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--k8-dim, #7f8b9c);
+}
+
+.scn-row-symptom,
+.scn-symptom,
+.scn-code {
+  font-family: var(--k8-mono, ui-monospace, Menlo, monospace);
+  font-size: 0.7rem;
+  color: var(--k8-backoff, #ff9c3d);
+}
+
+/* The badge is always in the markup; the row's own state decides whether it is
+ * seen. scenarios.ts toggles .is-running on the row and expects this contract. */
+.scn-row-live {
+  display: none;
+}
+
+.scn-row.is-running .scn-row-live,
+.scn-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+  font-size: 0.64rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--k8-ready, #4fe08a);
+}
+
+.scn-dot,
+.scn-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: scn-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes scn-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+/* ----------------------------------------------------------------- detail */
+
+.scn-detail {
+  overflow-y: auto;
+  padding: 1.1rem 1.4rem 1.4rem;
+}
+
+.scn-detail-title {
+  margin: 0 0 0.35rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.scn-detail-blurb {
+  margin: 0 0 1rem;
+  font-size: 0.84rem;
+  line-height: 1.6;
+  color: var(--k8-dim, #7f8b9c);
+  max-width: 70ch;
+}
+
+.scn-block {
+  margin-bottom: 1.05rem;
+}
+
+.scn-block-label,
+.scn-eyebrow {
+  font-size: 0.6rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--k8-dim, #7f8b9c);
+  margin-bottom: 0.4rem;
+}
+
+.scn-watch {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.scn-watch-item {
+  font-size: 0.82rem;
+  line-height: 1.55;
+  margin-bottom: 0.25rem;
+}
+
+.scn-teaches {
+  font-size: 0.84rem;
+  line-height: 1.6;
+  padding: 0.7rem 0.9rem;
+  border-left: 2px solid var(--k8-accent, #38e8ff);
+  background: color-mix(in srgb, var(--k8-accent, #38e8ff) 7%, transparent);
+  border-radius: 0 6px 6px 0;
+  max-width: 70ch;
+}
+
+.scn-timing,
+.scn-note {
+  font-size: 0.74rem;
+  color: var(--k8-dim, #7f8b9c);
+}
+
+/* ---------------------------------------------------------------- actions */
+
+.scn-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 1.1rem;
+}
+
+.scn-btn {
+  appearance: none;
+  border: 1px solid var(--k8-border, #22303f);
+  border-radius: 7px;
+  padding: 0.42rem 0.95rem;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 560;
+  cursor: pointer;
+  background: transparent;
+  color: var(--k8-text, #e8eef6);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.scn-btn:hover {
+  background: color-mix(in srgb, var(--k8-accent, #38e8ff) 14%, transparent);
+}
+
+.scn-btn-run {
+  background: var(--k8-accent, #38e8ff);
+  border-color: transparent;
+  color: #04121a;
+}
+
+.scn-btn-run:hover {
+  filter: brightness(1.08);
+}
+
+.scn-btn-stop {
+  border-color: color-mix(in srgb, var(--k8-failed, #ff4d5e) 55%, transparent);
+  color: var(--k8-failed, #ff4d5e);
+}
+
+/* -------------------------------------------------------------- the beats */
+
+.scn-beats {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: beat;
+}
+
+.scn-beat {
+  display: flex;
+  gap: 0.7rem;
+  padding: 0.42rem 0;
+  border-left: 2px solid var(--k8-border, #22303f);
+  padding-left: 0.85rem;
+  margin-left: 0.25rem;
+  opacity: 0.55;
+  transition: opacity 0.2s ease, border-color 0.2s ease;
+}
+
+.scn-beat.is-on {
+  opacity: 1;
+  border-left-color: var(--k8-accent, #38e8ff);
+}
+
+.scn-beat-at {
+  font-family: var(--k8-mono, ui-monospace, Menlo, monospace);
+  font-size: 0.68rem;
+  color: var(--k8-dim, #7f8b9c);
+  min-width: 3.2ch;
+  padding-top: 0.12rem;
+}
+
+.scn-beat-text {
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+/* ------------------------------------------------------------------ footer */
+
+.scn-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.62rem 1.4rem;
+  border-top: 1px solid var(--k8-border, #22303f);
+  background: color-mix(in srgb, var(--k8-panel-2, #16202d) 60%, transparent);
+}
+
+.scn-hint {
+  font-size: 0.7rem;
+  color: var(--k8-dim, #7f8b9c);
+}
+
+.scn-foot-run {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.scn-foot-label {
+  font-size: 0.78rem;
+  font-weight: 560;
+}
+
+.scn-clock,
+.scn-bar {
+  font-family: var(--k8-mono, ui-monospace, Menlo, monospace);
+  font-size: 0.72rem;
+  color: var(--k8-dim, #7f8b9c);
+}
+
+.scn-bar {
+  position: relative;
+  width: 110px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--k8-border, #22303f);
+  overflow: hidden;
+}
+
+.scn-bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--k8-accent, #38e8ff);
+  transition: width 0.2s linear;
+}
+
+.scn-empty {
+  padding: 2rem 1.4rem;
+  font-size: 0.84rem;
+  color: var(--k8-dim, #7f8b9c);
+}
+
+/* --------------------------------------------------- the band over the city
+ * When the sheet closes the scenario keeps running, so the narration has to
+ * stay visible: the whole point is the thing happening behind the panel. */
+
+.scn-band {
+  position: fixed;
+  left: 50%;
+  bottom: 7.5rem;
+  transform: translateX(-50%);
+  z-index: 46;
+  width: min(680px, 92vw);
+  pointer-events: auto;
+}
+
+.scn-band[hidden] {
+  display: none;
+}
+
+.scn-band-card {
+  border: 1px solid var(--k8-border, #22303f);
+  border-radius: var(--k8-radius, 10px);
+  background: color-mix(in srgb, var(--k8-panel, #0e1520) 92%, transparent);
+  backdrop-filter: blur(10px);
+  box-shadow: var(--k8-shadow, 0 12px 40px rgb(0 0 0 / 45%));
+  padding: 0.7rem 0.95rem 0.75rem;
+}
+
+.scn-band-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  margin-bottom: 0.35rem;
+}
+
+.scn-band-title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.scn-band-beat {
+  font-size: 0.86rem;
+  line-height: 1.55;
+  color: var(--k8-text, #e8eef6);
+}
+
+.scn-band-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+}
+
+/* ------------------------------------------------------------------- small */
+
+@media (max-width: 820px) {
+  .scn-body {
+    grid-template-columns: 1fr;
+  }
+
+  .scn-list {
+    border-right: 0;
+    border-bottom: 1px solid var(--k8-border, #22303f);
+    max-height: 34vh;
+  }
+
+  .scn-hint {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scn-dot,
+  .scn-live-dot {
+    animation: none;
+  }
+}

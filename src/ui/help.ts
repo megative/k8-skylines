@@ -34,11 +34,9 @@ const KEYMAP: readonly KeySection[] = [
     rows: [
       { k: ['Left-drag'], d: 'Pan in orbit mode — grab the ground and move it, the way a map does' },
       { k: ['Shift', 'Ctrl', 'Cmd'], j: ' or ', d: 'Hold and left-drag to orbit around the city' },
-      { k: ['Wheel'], d: 'Zoom toward the cursor in orbit mode; adjust movement speed in fly mode' },
+      { k: ['Wheel'], d: 'Zoom toward the point under the cursor' },
       { k: ['Right-click'], d: 'Context menu — also a long press on touch' },
       { k: ['W', 'A', 'S', 'D'], d: 'Move; the arrow keys do the same' },
-      { k: ['Space', 'E'], j: ' / ', d: 'Rise in fly mode, jump on foot' },
-      { k: ['C', 'Q'], j: ' / ', d: 'Descend in fly mode, crouch on foot' },
       { k: ['Shift', 'Alt'], j: ' · ', d: 'Boost · precision' },
       { k: ['1 finger', '2 fingers'], j: ' · ', d: 'Pan · pinch-zoom, twist to orbit, drag to tilt' },
       { k: ['Esc'], d: 'Leave pointer lock' },
@@ -47,7 +45,6 @@ const KEYMAP: readonly KeySection[] = [
   {
     title: 'Moving around the city',
     rows: [
-      { k: ['F', 'G'], j: ' · ', d: 'Fly · walk the city on foot at 1.7 m' },
       { k: ['H', 'Home', 'O'], j: ' · ', d: 'Establishing shot · default shot · straight-down overview' },
       { k: ['Click'], d: 'Select a building and open the inspector' },
       { k: ['Esc'], d: 'Close the inspector and clear the selection' },

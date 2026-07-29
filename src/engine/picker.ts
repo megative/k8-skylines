@@ -106,9 +106,21 @@ export function createPicker(gfx: Gfx, registry: Registry, bus: Bus, dom: HTMLEl
   let hitObject: THREE.Object3D | null = null
   let hitInstance = -1
 
+  /*
+   * Track which modals are open by id, not how many opened.
+   *
+   * A counter assumed every `open: true` is matched by exactly one `false`, and
+   * it is not: the command palette announces the tour and the help sheet as it
+   * launches them, and those surfaces announce themselves as well. Two opens
+   * and one close left the counter stuck above zero and selection dead for the
+   * rest of the session, with nothing on screen to explain why.
+   */
+  const openModals = new Set<string>()
   const offOverlay = bus.on('overlay', ({ id, open }) => {
     if (MODAL_OVERLAYS.indexOf(id as (typeof MODAL_OVERLAYS)[number]) < 0) return
-    modalOpen = Math.max(0, modalOpen + (open ? 1 : -1))
+    if (open) openModals.add(id)
+    else openModals.delete(id)
+    modalOpen = openModals.size
     if (modalOpen > 0) clearHover()
   })
 

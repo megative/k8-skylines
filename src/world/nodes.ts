@@ -1807,7 +1807,13 @@ export function createNodes(ctx: WorldCtx): WorldModule {
       refreshTheme()
     }
 
-    for (let i = 0; i < parts.length; i++) updateNode(s, dt, parts[i])
+    /* A machine that is not in the cluster is not drawn at all. Dimming it or
+     * marking it NotReady would say "this is broken"; it is simply not here. */
+    for (let i = 0; i < parts.length; i++) {
+      const here = s.nodes[i] === undefined ? true : s.nodes[i].present
+      if (parts[i].group.visible !== here) parts[i].group.visible = here
+      if (here) updateNode(s, dt, parts[i])
+    }
 
     for (let q = 0; q < PORTS; q++) {
       const st = portState[q]

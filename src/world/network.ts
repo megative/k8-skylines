@@ -632,9 +632,10 @@ export function createNetwork(ctx: WorldCtx): WorldModule {
   const EX = ANCHOR.externalClients[0]
   const EZ = ANCHOR.externalClients[2]
   const clientBeacons: THREE.Mesh[] = []
+  const clientBoxes: THREE.Mesh[] = []
   for (let i = 0; i < 6; i++) {
     const x = EX + (i - 2.5) * 26
-    part(BOX, 'concrete', lbGroup, x, 5, EZ, 14, 10, 14)
+    clientBoxes.push(part(BOX, 'concrete', lbGroup, x, 5, EZ, 14, 10, 14))
     clientBeacons.push(part(BOX, 'off', lbGroup, x, 12, EZ, 4, 4, 4))
   }
   const extTitle = label(60, 1, 0xffffff)
@@ -987,6 +988,44 @@ export function createNetwork(ctx: WorldCtx): WorldModule {
     },
   })
   R.bind(lbGroup, eLoadBalancer)
+
+  /*
+   * The clients get their own entry. They sit inside lbGroup, and binding only
+   * the group meant a reader who clicked a client was told about the load
+   * balancer instead — the selection explained its neighbour. Binding the
+   * meshes after the group is enough, because resolve() walks up from the mesh
+   * and stops at the first thing bound.
+   */
+  const eExternalClients = R.register({
+    id: 'net.external-clients',
+    title: 'External clients',
+    district: 'network',
+    object: clientBoxes[0],
+    focus: [EX, 46, EZ + 70],
+    summary:
+      'Everything outside the cluster that wants an answer. Kubernetes does not know they exist.',
+    detail: [
+      'These are browsers, mobile apps and other services on the far side of the boundary. They are drawn outside the fence because nothing here is a Kubernetes object: no controller reconciles them, no Service selects them, and the API server has never heard of them.',
+      'They reach the cluster by one of exactly three doors: an external address on a `LoadBalancer` Service, a port opened on every node by a `NodePort`, or an Ingress that terminates the hostname and routes by path. There is no fourth way in from outside, which is why an unreachable application is nearly always a question about which of those three is configured.',
+      'The lamp on each client lights while it has a request in flight. When endpoints go unready the requests do not stop arriving — they start failing, and the 5xx rate at the ingress is the first place a user\'s pain becomes visible to the cluster.',
+    ],
+    caveats: [
+      'A real client population is not six machines in a row; the count is a legible sample, not a load model.',
+      'TLS, retries, connection pooling and client-side timeouts are not modelled.',
+    ],
+    keywords: ['client', 'external', 'traffic', 'user', 'outside', 'request'],
+    metrics: (s) => {
+      let rps = 0
+      for (const ing of s.ingresses) rps += ing.rps
+      let err = 0
+      for (const ing of s.ingresses) err = Math.max(err, ing.errorRate)
+      return [
+        { label: 'requests in', value: `${Math.round(rps)}/s` },
+        { label: 'failing', value: `${(err * 100).toFixed(1)}%` },
+      ]
+    },
+  })
+  for (const b of clientBoxes) R.bind(b, eExternalClients)
 
   const eHeadless = R.register({
     id: 'net.service.headless',

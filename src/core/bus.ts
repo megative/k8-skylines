@@ -23,6 +23,18 @@ export interface BusEvents {
   event: ClusterEvent
   /** Playback transport. */
   transport: { paused: boolean; timeScale: number }
+  /**
+   * Advance the model by one unit and stop again.
+   *
+   * A cluster that runs continuously cannot be learned from: cause and effect
+   * are separated by whatever the frame rate happened to be, and the events
+   * scroll past faster than they can be read. Stepping makes the model behave
+   * like a debugger — run until something actually happens, then hold still.
+   *
+   * 'event'  — until the next cluster event is emitted
+   * 'second' — one model second
+   */
+  step: { kind: 'event' | 'second' }
   /** Theme flipped. */
   theme: { mode: 'day' | 'night' }
   /** A tour chapter began. */

@@ -133,8 +133,18 @@ function groundHeightAt(x: number, z: number): number {
 
 const FOV = { orbit: 48, fly: 62, walk: 70 } as const
 
-const MIN_DIST = 3
+/* 3 let the camera inside its own geometry. The reference stops at 24 and that
+ * is the right instinct: closer than this there is nothing to understand. */
+const MIN_DIST = 24
 const MAX_DIST = 2600
+/* Closest a selection may pull the camera. Below this the surroundings leave
+ * the frame and the reader loses the thread of where they are. */
+const MIN_FOCUS_DIST = 58
+/* Furthest a selection may push it. registry.resolve() walks UP the scene graph
+ * to find what a mesh explains, so clicking a small part often resolves to its
+ * whole district; framing that group by its bounding sphere threw the camera
+ * hundreds of metres out and collapsed the city to a smudge. */
+const MAX_FOCUS_DIST = 560
 /* An orbit pivot is a point of interest and must stay over the city. An eye is
  * not: at full zoom-out the orbit camera itself already sits TARGET_LIMIT +
  * MAX_DIST away, so the free-flight bounds have to contain that or switching
@@ -151,6 +161,24 @@ const TOUCH_TILT_PER_PX = 0.004
 
 const EASE_TARGET = { orbit: 15, fly: 14, walk: 0 } as const
 const EASE_ROT = { orbit: 18, fly: 24, walk: 30 } as const
+
+/*
+ * Rotation is 1:1 with the hand, and then it coasts.
+ *
+ * Easing the angles toward a goal put a lag between the pointer and the
+ * picture, and stopping dead on release left no follow-through, so the camera
+ * managed to feel mushy and lifeless at the same time. Only quantities that are
+ * NOT 1:1 — distance and the pivot — stay smoothed.
+ *
+ * Decay is per second; at 13 a flick settles in about a quarter of a second.
+ */
+const SPIN_DECAY = 13
+/** How fast the velocity estimator chases the hand while dragging. */
+const VEL_TRACK = 26
+/** Below this the coast is over; snapping to zero stops endless tiny updates. */
+const SPIN_DEAD = 1e-4
+/** Squared speed below which a pan coast has finished. */
+const PAN_DEAD = 1e-4
 const EASE_DIST = 13
 const EASE_FOCUS = 3.2
 const EASE_FOV = 7
@@ -202,6 +230,7 @@ const _v = new THREE.Vector3()
 const _v2 = new THREE.Vector3()
 const _fwd = new THREE.Vector3()
 const _right = new THREE.Vector3()
+const _upv = new THREE.Vector3()
 const _box = new THREE.Box3()
 const _sphere = new THREE.Sphere()
 const _euler = new THREE.Euler(0, 0, 0, 'YXZ')
@@ -309,8 +338,29 @@ export function createCameraRig(gfx: Gfx, dom: HTMLElement, bus: Bus): CameraRig
     p.y = clamp(p.y, FLOOR, top)
   }
 
+  /*
+   * Hand the camera back with zero snap.
+   *
+   * Clearing the flag alone left `goal` sitting on the focus destination, so
+   * the ordinary easing carried on flying there after the user had already
+   * grabbed the camera — the camera visibly fighting the hand. Adopting the
+   * live pose as the new intent makes taking control a pure mode flip: nothing
+   * to finish, nothing to snap back from, and any inertia from the flight is
+   * dropped rather than inherited.
+   */
   function cancelFocus(): void {
+    if (!focusActive) return
     focusActive = false
+    goal.target.copy(cur.target)
+    goal.dist = cur.dist
+    goal.yaw = cur.yaw
+    goal.pitch = cur.pitch
+    velYaw = 0
+    velPitch = 0
+    panVel.set(0, 0, 0)
+    pannedDelta.set(0, 0, 0)
+    spunYaw = 0
+    spunPitch = 0
   }
 
   /* ------------------------------------------------------------------------
@@ -437,10 +487,15 @@ export function createCameraRig(gfx: Gfx, dom: HTMLElement, bus: Bus): CameraRig
     _v2.set(_v.x - cx, _v.y - cy, _v.z - cz)
     if (_v2.lengthSq() < 1e-6) _v2.set(0, 0.55, 1)
     _v2.normalize()
-    /* Never approach from below grade: the city is meant to be read from above,
-     * and the etcd vault in particular is read by looking down into the pit. */
-    if (_v2.y < 0.22) {
-      _v2.y = 0.22
+    /*
+     * Never approach from below grade, and never from nearly level with it
+     * either. At the old floor of 0.22 the camera sat about thirteen degrees
+     * above the horizon, which put it on the deck looking down a road to the
+     * vanishing point with the selected thing lost in it. A third of the way up
+     * gives the three-quarter view the city is drawn to be read from.
+     */
+    if (_v2.y < 0.55) {
+      _v2.y = 0.55
       _v2.normalize()
     }
     const d = clamp(dist, MIN_DIST, MAX_DIST)
@@ -470,7 +525,14 @@ export function createCameraRig(gfx: Gfx, dom: HTMLElement, bus: Bus): CameraRig
       cz = _sphere.center.z
       radius = Math.max(_sphere.radius, 2)
     }
-    frameAt(cx, cy, cz, framingDistance(radius, FOV[mode], camera.aspect, padding))
+    /*
+     * Framing a two-metre object by its own radius alone puts the camera a few
+     * metres from it — inside the city, with nothing recognisable in frame.
+     * Selecting a pause container should move you close enough to read it and
+     * no closer than you can still tell which node you are standing on.
+     */
+    const fitted = framingDistance(radius, FOV[mode], camera.aspect, padding)
+    frameAt(cx, cy, cz, clamp(fitted, MIN_FOCUS_DIST, MAX_FOCUS_DIST))
   }
 
   function focusPoint(p: THREE.Vector3, distance?: number): void {
@@ -681,9 +743,52 @@ export function createCameraRig(gfx: Gfx, dom: HTMLElement, bus: Bus): CameraRig
     }
     cur.dist = approach(cur.dist, goal.dist, focusActive ? EASE_FOCUS : EASE_DIST, step)
 
-    const rot = focusActive ? EASE_FOCUS : EASE_ROT[mode]
-    cur.yaw = approach(cur.yaw, goal.yaw, rot, step)
-    cur.pitch = approach(cur.pitch, goal.pitch, rot, step)
+    if (focusActive) {
+      /* A scripted flight owns the angles; the hand does not fight it. */
+      cur.yaw = approach(cur.yaw, goal.yaw, EASE_FOCUS, step)
+      cur.pitch = approach(cur.pitch, goal.pitch, EASE_FOCUS, step)
+      velYaw = 0
+      velPitch = 0
+      spunYaw = 0
+      spunPitch = 0
+    } else {
+      const rotating = drag === 'orbit' || drag === 'look'
+      if (rotating) {
+        const inv = 1 / Math.max(step, 1e-4)
+        velYaw = approach(velYaw, spunYaw * inv, VEL_TRACK, step)
+        velPitch = approach(velPitch, spunPitch * inv, VEL_TRACK, step)
+      } else if (velYaw !== 0 || velPitch !== 0) {
+        goal.yaw += velYaw * step
+        goal.pitch = clampPitch(goal.pitch + velPitch * step, mode)
+        velYaw = approach(velYaw, 0, SPIN_DECAY, step)
+        velPitch = approach(velPitch, 0, SPIN_DECAY, step)
+        if (velYaw < SPIN_DEAD && velYaw > -SPIN_DEAD) velYaw = 0
+        if (velPitch < SPIN_DEAD && velPitch > -SPIN_DEAD) velPitch = 0
+      }
+      spunYaw = 0
+      spunPitch = 0
+      /* 1:1. The angles are the hand's, not a target to chase. */
+      cur.yaw = goal.yaw
+      cur.pitch = goal.pitch
+
+      /* The same treatment for the grabbed ground: exact under the hand, and
+       * it keeps sliding for a moment once the hand lets go. */
+      if (drag === 'pan') {
+        const inv = 1 / Math.max(step, 1e-4)
+        _v.copy(pannedDelta).multiplyScalar(inv)
+        panVel.x = approach(panVel.x, _v.x, VEL_TRACK, step)
+        panVel.y = approach(panVel.y, _v.y, VEL_TRACK, step)
+        panVel.z = approach(panVel.z, _v.z, VEL_TRACK, step)
+      } else if (panVel.lengthSq() > PAN_DEAD) {
+        goal.target.addScaledVector(panVel, step)
+        clampTarget(goal.target)
+        cur.target.copy(goal.target)
+        panVel.multiplyScalar(Math.exp(-SPIN_DECAY * step))
+      } else if (panVel.lengthSq() !== 0) {
+        panVel.set(0, 0, 0)
+      }
+      pannedDelta.set(0, 0, 0)
+    }
 
     /* Yaw accumulates without bound under pointer lock; fold both copies at
      * once so easing never sees a discontinuity. */
@@ -765,32 +870,60 @@ export function createCameraRig(gfx: Gfx, dom: HTMLElement, bus: Bus): CameraRig
     grabValid = rayToPlane(ndcX(clientX), ndcY(clientY), grabPlaneY, grab)
   }
 
-  function dragPan(clientX: number, clientY: number): void {
-    if (!grabValid) {
-      /* The view ray never meets the ground plane (looking at or above the
-       * horizon). Fall back to a distance-scaled screen-space pan. */
-      const k = Math.max(cur.dist, 1) * 0.0016
-      rightFrom(cur.yaw, _right)
-      goal.target.addScaledVector(_right, -(clientX - lastX) * k)
-      _v.set(-Math.sin(cur.yaw), 0, -Math.cos(cur.yaw))
-      goal.target.addScaledVector(_v, (clientY - lastY) * k)
-      clampTarget(goal.target)
-      cur.target.copy(goal.target)
-      return
-    }
+  /**
+   * Pan: 1:1 in the camera's own plane.
+   *
+   * This used to grab the ground — intersect the cursor ray with a horizontal
+   * plane and keep the grabbed point under the cursor. That reads well from
+   * straight above and badly from anywhere else: at a shallow angle a small
+   * vertical drag sweeps the intersection across half the city, and moving the
+   * mouse down means "travel forward over the terrain" rather than "move the
+   * picture down". The result was a pan whose gain depended on where you were
+   * looking, which is what makes it feel like the perspective is fighting you.
+   *
+   * Moving the pivot along the camera's own right and up vectors, scaled by
+   * world units per pixel at the pivot's distance, makes the image track the
+   * hand exactly at every angle — the way dragging a photograph does.
+   */
+  function dragPan(dx: number, dy: number): void {
+    _panBefore.copy(goal.target)
     syncCamera()
-    if (!rayToPlane(ndcX(clientX), ndcY(clientY), grabPlaneY, _v)) return
-    /* Move the world so the point grabbed at pointerdown stays under the
-     * cursor. Applied to `cur` as well: map panning must be exact, not eased. */
-    _v2.copy(grab).sub(_v)
-    goal.target.add(_v2)
+    const h = Math.max(1, dom.getBoundingClientRect().height)
+    const wpp = (2 * Math.tan((camera.fov * Math.PI) / 360) * Math.max(cur.dist, 1)) / h
+    _right.setFromMatrixColumn(camera.matrixWorld, 0)
+    _upv.setFromMatrixColumn(camera.matrixWorld, 1)
+    _v.set(0, 0, 0)
+    _v.addScaledVector(_right, -dx * wpp)
+    _v.addScaledVector(_upv, dy * wpp)
+    goal.target.add(_v)
     clampTarget(goal.target)
+    /* Panning is exact, never eased: the grabbed point must not drift. */
     cur.target.copy(goal.target)
+    /* What the clamp allowed, so a pan into the world bounds builds no coast. */
+    pannedDelta.add(goal.target).sub(_panBefore)
   }
 
+  /** Pivot velocity carried after the pointer lets go, in units a second. */
+  const panVel = new THREE.Vector3()
+  const pannedDelta = new THREE.Vector3()
+  const _panBefore = new THREE.Vector3()
+
+  /** Angular velocity carried after the pointer lets go, in radians a second. */
+  let velYaw = 0
+  let velPitch = 0
+  /** Rotation applied since the last frame, used to estimate that velocity. */
+  let spunYaw = 0
+  let spunPitch = 0
+
   function dragRotate(dx: number, dy: number): void {
-    goal.yaw -= dx * DRAG_ROT_PER_PX
+    const dYaw = -dx * DRAG_ROT_PER_PX
+    const before = goal.pitch
+    goal.yaw += dYaw
     goal.pitch = clampPitch(goal.pitch - dy * DRAG_ROT_PER_PX, mode)
+    spunYaw += dYaw
+    /* Measure what the clamp actually allowed, or a drag into the pitch limit
+     * would launch a coast the picture never made. */
+    spunPitch += goal.pitch - before
   }
 
   function updateGesture(a: PointerSlot, b: PointerSlot): void {
@@ -904,8 +1037,12 @@ export function createCameraRig(gfx: Gfx, dom: HTMLElement, bus: Bus): CameraRig
 
     const dx = e.clientX - lastX
     const dy = e.clientY - lastY
-    if (drag === 'pan') dragPan(e.clientX, e.clientY)
-    else if (drag === 'orbit' || drag === 'look') {
+    /* Any drag takes the camera back, panning included: it used to leave a
+     * focus flight running underneath and the two pulled against each other. */
+    if (drag === 'pan') {
+      cancelFocus()
+      dragPan(dx, dy)
+    } else if (drag === 'orbit' || drag === 'look') {
       cancelFocus()
       dragRotate(dx, dy)
     }
@@ -937,16 +1074,37 @@ export function createCameraRig(gfx: Gfx, dom: HTMLElement, bus: Bus): CameraRig
     const delta = e.deltaY * unit
 
     if (mode === 'orbit') {
-      const next = clamp(goal.dist * Math.exp(delta * 0.0011), MIN_DIST, MAX_DIST)
-      const s = next / goal.dist
-      syncCamera()
-      /* Exact zoom-to-cursor: scaling the target about the point under the
-       * cursor by the same factor keeps that point fixed on screen. */
-      if (s !== 1 && rayToPlane(ndcX(e.clientX), ndcY(e.clientY), goal.target.y, _v)) {
-        goal.target.lerp(_v, 1 - s)
-        clampTarget(goal.target)
+      const dOld = goal.dist
+      const dNew = clamp(dOld * Math.exp(delta * 0.0011), MIN_DIST, MAX_DIST)
+      if (dNew !== dOld) {
+        syncCamera()
+        /*
+         * Dolly along the cursor ray, in world space.
+         *
+         * This used to intersect the cursor ray with the horizontal plane at
+         * the pivot's height and scale the pivot about that point — which only
+         * works while the ray meets that plane. Aim at a tower, at the sky, or
+         * anywhere above the horizon and there is no intersection, so the zoom
+         * silently degraded to changing the radius around a fixed pivot: a
+         * model on a turntable rather than a city you move through.
+         *
+         * Holding the point under the cursor fixed while the distance changes
+         * gives pivot' = pivot + (dOld - dNew) * (ray - view), with both
+         * directions unit vectors from the camera. It needs no plane at all.
+         */
+        _v.set(ndcX(e.clientX), ndcY(e.clientY), 0.5).unproject(camera).sub(camera.position)
+        if (_v.lengthSq() > 1e-8) {
+          _v.normalize()
+          _v2.set(0, 0, -1).applyQuaternion(camera.quaternion)
+          _v.sub(_v2).multiplyScalar(dOld - dNew)
+          /* One notch may not throw the pivot across the city. */
+          const maxShift = dOld * 0.75
+          if (_v.lengthSq() > maxShift * maxShift) _v.setLength(maxShift)
+          goal.target.add(_v)
+          clampTarget(goal.target)
+        }
       }
-      goal.dist = next
+      goal.dist = dNew
     } else if (mode === 'fly') {
       flyBase = clamp(flyBase * Math.exp(-delta * 0.0011), FLY_BASE_MIN, FLY_BASE_MAX)
     }
@@ -994,11 +1152,12 @@ export function createCameraRig(gfx: Gfx, dom: HTMLElement, bus: Bus): CameraRig
 
     if (e.repeat) return
     switch (e.code) {
+      /* F and G used to enter fly and walk. Both are gone from the product:
+       * orbit is the only way the city is meant to be read, and a mode the UI
+       * does not offer must not be reachable by a stray keypress either. */
       case 'KeyF':
-        setMode(mode === 'fly' ? 'orbit' : 'fly')
         break
       case 'KeyG':
-        setMode(mode === 'walk' ? 'orbit' : 'walk')
         break
       case 'KeyH':
       case 'Home':
@@ -1065,9 +1224,14 @@ export function createCameraRig(gfx: Gfx, dom: HTMLElement, bus: Bus): CameraRig
     if (d) focusDistrict(d)
   }
 
-  const offFocus = bus.on('focus', ({ id }) => {
+  const offFocus = bus.on('focus', ({ id, source }) => {
     const entry = registry.get(id)
-    if (entry) focusExplainer(entry)
+    if (!entry) return
+    /* A click names an instance; search, the tour and deep links name a concept.
+     * Frame what was actually clicked, or the third pod sends you to the first. */
+    const picked = registry.lastResolved
+    if (source === 'click' && picked) focusObject(picked)
+    else focusExplainer(entry)
   })
 
   const offDistrict = bus.on('focus-district', ({ id }) => {
@@ -1075,11 +1239,29 @@ export function createCameraRig(gfx: Gfx, dom: HTMLElement, bus: Bus): CameraRig
     if (d) focusDistrict(d)
   })
 
-  /* An open overlay owns the keyboard, and pointer lock would hide the cursor
-   * the user needs to click with. */
-  const offOverlay = bus.on('overlay', ({ open }) => {
-    overlayOpen = open
-    if (open) {
+  /*
+   * Only a modal surface owns the keyboard.
+   *
+   * This used to read the event's `open` flag and ignore its `id`, so anything
+   * that announced itself on this channel silenced the camera: the label
+   * toggle emits `overlay { id: 'labels' }`, the knob rail emits
+   * `overlay { id: 'controls' }`, and the inspector — a side panel you are
+   * meant to read *while* flying — emitted one too. Labels start on, so the
+   * camera was deaf from load until something happened to send `open: false`,
+   * which is why the first keypress went nowhere and why an open inspector
+   * froze the controls.
+   *
+   * Track them by id, and let only the surfaces that genuinely take the whole
+   * keyboard count.
+   */
+  const KEYBOARD_OWNERS = new Set(['help', 'search', 'tour', 'scenarios'])
+  const openOverlays = new Set<string>()
+  const offOverlay = bus.on('overlay', ({ id, open }) => {
+    if (!KEYBOARD_OWNERS.has(id)) return
+    if (open) openOverlays.add(id)
+    else openOverlays.delete(id)
+    overlayOpen = openOverlays.size > 0
+    if (overlayOpen) {
       keys.clear()
       drag = 'none'
       exitPointerLock()

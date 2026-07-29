@@ -203,6 +203,7 @@ function makeNode(i: number): NodeState {
   return {
     name: `node-${i + 1}`,
     index: i,
+    present: true,
     conditions: [
       { type: 'Ready', status: 'True', reason: 'KubeletReady', sinceSeconds: 0 },
       { type: 'MemoryPressure', status: 'False', reason: 'KubeletHasSufficientMemory', sinceSeconds: 0 },
@@ -737,6 +738,9 @@ function updateTotals(ctx: SimCtx): void {
   let memAlloc = 0
   for (let i = 0; i < ctx.s.nodes.length; i++) {
     const n = ctx.s.nodes[i]
+    /* A machine that is not in the cluster contributes nothing — not capacity,
+     * not a Ready count, and not a missing one. It simply is not there. */
+    if (!n.present) continue
     for (let c = 0; c < n.conditions.length; c++) {
       const cond = n.conditions[c]
       if (cond.type === 'Ready' && cond.status === 'True') nodesReady += 1
@@ -765,6 +769,12 @@ const MAX_STEP = 2
 
 function stepOnce(ctx: SimCtx, dt: number): void {
   ctx.s.t += dt
+
+  /* Cluster membership, derived every tick rather than on knob change, so the
+   * flag can never drift from the knob whichever way the knob was set. */
+  for (let i = 0; i < ctx.s.nodes.length; i++) {
+    ctx.s.nodes[i].present = i < ctx.s.knobs.nodeCount
+  }
 
   const pods = ctx.store.podList
   for (let i = 0; i < pods.length; i++) pods[i].ageSeconds += dt

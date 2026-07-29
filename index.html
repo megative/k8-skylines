@@ -1,7 +1,7 @@
 <!doctype html>
 <!-- data-theme is set here, not by script, so the page never flashes the dark
      palette before main.ts runs. It must agree with the default in core/theme.ts. -->
-<html lang="en" data-theme="day">
+<html lang="en" data-theme="day" data-panels="minimal">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -21,7 +21,13 @@
     <div id="boot" role="status">
       <div class="boot-inner">
         <div class="boot-title">K8Skylines</div>
-        <div class="boot-sub" id="boot-sub">building the cluster…</div>
+        <div class="boot-tag">A working model of the Kubernetes control plane</div>
+        <div class="boot-bar"><i class="boot-bar-fill" id="boot-bar"></i></div>
+        <div class="boot-sub" id="boot-sub">grading the ground…</div>
+        <p class="boot-note">
+          <b>Early prototype.</b> It is a model, not an emulator, and it almost certainly
+          contains inaccuracies in both the simulation and the explanations.
+        </p>
       </div>
     </div>
 

@@ -313,6 +313,9 @@ export type FilterReason =
 export interface NodeVerdict {
   nodeName: string
   passed: boolean
+  /** The machine is not in the cluster: no verdict was formed, and it must not
+   * be counted in `N/M nodes are available`. */
+  absent?: boolean
   reason?: FilterReason
   /** 0..100 once scored; undefined if it never reached the score phase. */
   score?: number
@@ -408,6 +411,15 @@ export interface NodeState {
   name: string
   /** Index into the geometry's node grid. */
   index: number
+  /**
+   * Is this machine part of the cluster at all?
+   *
+   * Distinct from Ready and from cordoned: an absent node has no Node object,
+   * so the scheduler never sees it, it contributes nothing to capacity, and it
+   * is not a failure. Scaling the cluster down removes machines; it does not
+   * break them.
+   */
+  present: boolean
   conditions: NodeCondition[]
   taints: Taint[]
   /** Set by `kubectl cordon`. Blocks new scheduling, keeps running pods. */
@@ -765,6 +777,8 @@ export interface ClusterEvent {
  * -------------------------------------------------------------------------*/
 
 export interface Knobs {
+  /** Machines in the cluster, 1..N_NODES. Absent nodes are removed, not broken. */
+  nodeCount: number
   /** Desired replicas of the demo Deployment. The number the city chases. */
   replicas: number
   /** External requests per second arriving at the ingress. */
@@ -808,6 +822,7 @@ export interface Knobs {
 }
 
 export const DEFAULT_KNOBS: Knobs = {
+  nodeCount: N_NODES,
   replicas: 4,
   trafficRps: 120,
   requestCpuMilli: 250,
@@ -836,6 +851,53 @@ export const DEFAULT_KNOBS: Knobs = {
   podAntiAffinity: false,
   timeScale: 1,
   paused: false,
+}
+
+/* ---------------------------------------------------------------------------
+ * Scenarios — the failure curriculum.
+ *
+ * Nobody needs a visualization of a healthy cluster; they need one of a broken
+ * one. A scenario is a pathology an on-call engineer actually meets, staged so
+ * it propagates through the city in the correct order and with the correct
+ * delay, and narrated while it does.
+ * -------------------------------------------------------------------------*/
+
+export type ScenarioCategory =
+  | 'workload'
+  | 'scheduling'
+  | 'node'
+  | 'control-plane'
+  | 'network'
+  | 'storage'
+
+export interface ScenarioStep {
+  /** Model seconds after the scenario started when this beat begins. */
+  at: number
+  /** What is happening right now, in one or two plain sentences. */
+  text: string
+  /** Registry id to move the camera to, when this beat has a place. */
+  focus?: string
+}
+
+export interface ScenarioDef {
+  id: string
+  title: string
+  category: ScenarioCategory
+  /** One line: what breaks. */
+  blurb: string
+  /** What the reader should watch for while it plays. */
+  watchFor: string[]
+  /**
+   * What `kubectl` would show — the real reason string or condition. This is
+   * the bridge between the city and the terminal the reader actually uses.
+   */
+  symptom?: string
+  /** Narration beats, like a tour chapter but driven by model time. */
+  steps?: ScenarioStep[]
+  /** Roughly how long it takes to play out, in model seconds. */
+  durationSeconds?: number
+  /** The lesson. Why this happens, and what a real operator does about it. */
+  teaches?: string
 }
 
 /* ---------------------------------------------------------------------------

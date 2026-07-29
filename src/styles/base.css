@@ -91,6 +91,47 @@ body {
   text-transform: uppercase;
 }
 
+.boot-tag {
+  margin-top: 0.55rem;
+  font-size: 0.74rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--k8-boot-sub, #7f8b9c);
+}
+
+/* The wait is what it is; what matters is that it never reads as frozen. The
+ * bar advances once per district, so progress is real rather than animated. */
+.boot-bar {
+  width: min(340px, 60vw);
+  height: 3px;
+  margin: 1.5rem auto 0;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--k8-boot-sub, #7f8b9c) 28%, transparent);
+  overflow: hidden;
+}
+
+.boot-bar-fill {
+  display: block;
+  width: 4%;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--k8-boot-title, #38e8ff);
+  transition: width 0.35s ease;
+}
+
+.boot-note {
+  margin: 2rem auto 0;
+  max-width: 34rem;
+  font-size: 0.78rem;
+  line-height: 1.55;
+  color: var(--k8-boot-sub, #7f8b9c);
+}
+
+.boot-note b {
+  color: var(--k8-boot-title, #38e8ff);
+  font-weight: 600;
+}
+
 .boot-sub {
   margin-top: 0.6rem;
   font-size: 0.85rem;
@@ -113,6 +154,30 @@ body {
   pointer-events: none;
   z-index: 20;
   contain: strict;
+}
+
+/*
+ * The bottom edge is shared: the view bar sits on the floor and the event
+ * ticker is stacked directly above it. Neither may be positioned from its own
+ * stylesheet alone, or they overlap — which is exactly what happened.
+ */
+#hud-bottom {
+  bottom: 3.5rem !important;
+}
+
+/*
+ * Clean mode is the default. Six panels opening at once buried the city under
+ * its own instrumentation; the read-outs and the knob rail are one click away
+ * in the view bar, and the inspector still opens on demand when you pick a
+ * building. Nothing is removed — only its default state changed.
+ */
+:root[data-panels='minimal'] #hud-left,
+:root[data-panels='minimal'] #hud-right,
+:root[data-panels='minimal'] #controls,
+/* The event stream is a firehose by design — real `kubectl get events` is too.
+ * It teaches nothing while it scrolls, so it belongs behind the Data switch. */
+:root[data-panels='minimal'] #hud-bottom {
+  display: none;
 }
 
 .hud {

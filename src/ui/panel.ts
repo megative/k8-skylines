@@ -1,7 +1,9 @@
 import type { Bus } from '../core/bus'
 import type { Registry } from '../core/registry'
 import { COLOR } from '../core/theme'
-import type { DistrictId, Explainer, SimState } from '../core/types'
+import type { DistrictId, Explainer, Knobs, SimState } from '../core/types'
+import { knobSpec } from './controls'
+import { knobsFor } from './knob-map'
 import { DISTRICTS } from '../world/layout'
 
 /* ============================================================================
@@ -150,13 +152,19 @@ export function createPanel(bus: Bus, registry: Registry): Panel {
   const caveatList = el('ul', 'pnl-clist')
   caveatSec.append(caveatHead, caveatList)
 
+  /* Adjust the mechanism you are reading about, without hunting the rail. */
+  const tuneSec = el('section', 'pnl-sec pnl-tune')
+  const tuneHead = el('h3', 'pnl-h', 'Adjust')
+  const tuneList = el('div', 'pnl-tlist')
+  tuneSec.append(tuneHead, tuneList)
+
   const relatedSec = el('section', 'pnl-sec pnl-related')
   const relatedHead = el('h3', 'pnl-h', 'Related')
   const relatedChips = el('div', 'pnl-chips')
   relatedSec.append(relatedHead, relatedChips)
 
   const body = el('div', 'pnl-body')
-  body.append(summary, metricsSec, detailSec, caveatSec, relatedSec)
+  body.append(summary, metricsSec, tuneSec, detailSec, caveatSec, relatedSec)
   article.append(head, body)
   host.appendChild(article)
   host.hidden = true
@@ -203,6 +211,59 @@ export function createPanel(bus: Bus, registry: Registry): Panel {
     setOpen(true)
   }
 
+  /* Rebuilt per selection, never per frame; the panel changes on a click. */
+  const liveInputs: { key: keyof Knobs; input: HTMLInputElement; out: HTMLElement | null }[] = []
+
+  const renderTuning = (entry: Explainer): void => {
+    liveInputs.length = 0
+    tuneList.textContent = ''
+    const keys = knobsFor(entry.id)
+    tuneSec.hidden = keys.length === 0
+    if (keys.length === 0) return
+
+    for (const key of keys) {
+      const spec = knobSpec(key)
+      if (!spec) continue
+
+      const row = el('div', 'pnl-tune-row')
+      const lab = el('label', 'pnl-tune-label', spec.label)
+      const out = spec.kind === 'toggle' ? null : el('span', 'pnl-tune-value')
+      const headRow = el('div', 'pnl-tune-head')
+      headRow.append(lab)
+      if (out) headRow.append(out)
+
+      const input = document.createElement('input')
+      input.className = spec.kind === 'toggle' ? 'pnl-tune-sw' : 'pnl-tune-range'
+      if (spec.kind === 'toggle') {
+        input.type = 'checkbox'
+      } else {
+        input.type = 'range'
+        input.min = String(spec.min ?? 0)
+        input.max = String(spec.max ?? 100)
+        input.step = String(spec.step ?? 1)
+      }
+      const id = `pnl-tune-${key}`
+      input.id = id
+      lab.htmlFor = id
+
+      input.addEventListener('input', () => {
+        /* The panel states an intent. The simulation decides, exactly as the
+         * rail does — two surfaces, one owner of the value. */
+        bus.emit('knob', {
+          key,
+          value: (spec.kind === 'toggle' ? input.checked : Number(input.value)) as Knobs[keyof Knobs],
+        })
+      })
+
+      const why = el('p', 'pnl-tune-why')
+      prose(why, spec.why)
+
+      row.append(headRow, input, why)
+      tuneList.appendChild(row)
+      liveInputs.push({ key, input, out })
+    }
+  }
+
   const render = (entry: Explainer): void => {
     current = entry
     const label = DISTRICT_LABEL.get(entry.district) ?? entry.district
@@ -222,6 +283,8 @@ export function createPanel(bus: Bus, registry: Registry): Panel {
       prose(p, entry.detail[i])
       detailSec.appendChild(p)
     }
+
+    renderTuning(entry)
 
     caveatList.textContent = ''
     const caveats = entry.caveats && entry.caveats.length > 0 ? entry.caveats : [MODEL_CAVEAT]
@@ -346,7 +409,23 @@ export function createPanel(bus: Bus, registry: Registry): Panel {
   host.addEventListener('click', onClick)
 
   /* Keys typed at the inspector are the inspector's, not the camera's. */
+  /* Keys the panel genuinely owns while focus is inside it. Everything else
+   * must reach the camera: swallowing every keydown here left the city
+   * uncontrollable for as long as an inspector was open, because clicking a
+   * building both opens this panel and puts focus in it. */
+  const PANEL_KEYS = new Set([
+    'Escape',
+    'ArrowUp',
+    'ArrowDown',
+    'PageUp',
+    'PageDown',
+    'Home',
+    'End',
+    'Tab',
+  ])
+
   const onHostKey = (ev: KeyboardEvent): void => {
+    if (!PANEL_KEYS.has(ev.key)) return
     ev.stopPropagation()
     if (ev.key === 'Escape') {
       ev.preventDefault()
@@ -366,7 +445,24 @@ export function createPanel(bus: Bus, registry: Registry): Panel {
 
   return {
     update(s: SimState): void {
-      if (!isOpen || !current || !current.metrics) return
+      if (!isOpen) return
+      /* Reflect the model, never assume the panel's own edit landed: a scenario
+       * or the rail may move the same value, and the slider must not lie. */
+      /* The inspector is handed whatever state its caller has; it must not
+       * require the knobs to be there just to show prose and metrics. */
+      for (let i = 0; s.knobs !== undefined && i < liveInputs.length; i++) {
+        const b = liveInputs[i]
+        const v = s.knobs[b.key]
+        if (typeof v === 'boolean') {
+          if (b.input.checked !== v) b.input.checked = v
+        } else if (typeof v === 'number') {
+          const spec = knobSpec(b.key)
+          const shown = spec?.fmt ? spec.fmt(v) : String(v)
+          if (b.input.value !== String(v)) b.input.value = String(v)
+          if (b.out && b.out.textContent !== shown) b.out.textContent = shown
+        }
+      }
+      if (!current || !current.metrics) return
       const now = performance.now()
       if (now - lastMetricAt < 1000 / METRIC_HZ) return
       lastMetricAt = now

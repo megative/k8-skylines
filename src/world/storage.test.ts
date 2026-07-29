@@ -61,6 +61,7 @@ function makeState(): SimState {
     nodes.push({
       name: `node-${i}`,
       index: i,
+      present: true,
       conditions: [],
       taints: [],
       unschedulable: false,

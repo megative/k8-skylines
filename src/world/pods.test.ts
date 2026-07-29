@@ -75,6 +75,7 @@ function makeNode(i: number): NodeState {
   return {
     name: `node-${i}`,
     index: i,
+    present: true,
     conditions: [{ type: 'Ready', status: 'True', reason: 'KubeletReady', sinceSeconds: 100 }],
     taints: [],
     unschedulable: false,

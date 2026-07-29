@@ -38,6 +38,13 @@ export interface Gfx {
   render(dt: number): void
   resize(): void
   setQuality(q: 'low' | 'high'): void
+  /**
+   * Bloom costs a full scene-graph traversal, a second render of the whole
+   * scene, and a five-level blur chain, every frame. Daylight carries meaning
+   * through hue and value and never relies on it, so day switches it off and
+   * gets that budget back.
+   */
+  setBloom(on: boolean): void
   dispose(): void
 }
 
@@ -66,11 +73,26 @@ interface MaybeEmissive {
   emissiveIntensity?: number
 }
 
+/*
+ * The bar for "this glows".
+ *
+ * It used to be 1.0, and at that level 949 of the city's 2966 meshes were
+ * admitted — nearly a third. A rule that says glow carries information cannot
+ * be true when a third of everything glows: district outlines, deck rims and
+ * plot borders all crossed it, so the neon read as decoration and the actual
+ * signals had nothing left to stand out against.
+ *
+ * Districts spend intensity in a consistent range: roughly 1.1-1.6 for lit
+ * structure and 1.9 and up for state that means something. The bar sits in the
+ * gap. Structure keeps its colour; only what is signalling blooms.
+ */
+const GLOW_THRESHOLD = 1.75
+
 function materialGlows(m: THREE.Material): boolean {
   const e = m as THREE.Material & MaybeEmissive
   const intensity = e.emissiveIntensity
   const color = e.emissive
-  if (color === undefined || intensity === undefined || intensity <= 1) return false
+  if (color === undefined || intensity === undefined || intensity <= GLOW_THRESHOLD) return false
   return color.r > 0 || color.g > 0 || color.b > 0
 }
 
@@ -192,6 +214,10 @@ export function createRenderer(canvas: HTMLCanvasElement): Gfx {
   camera.position.set(0, 300, 500)
 
   let quality: 'low' | 'high' = 'high'
+  /* Two independent gates: the theme decides whether bloom means anything, the
+   * quality tier decides whether the machine can afford it. */
+  let bloomAllowed = true
+  let bloomCapable = true
   let bloomEnabled = true
 
   const dprFor = (q: 'low' | 'high'): number =>
@@ -297,7 +323,8 @@ export function createRenderer(canvas: HTMLCanvasElement): Gfx {
   function setQuality(q: 'low' | 'high'): void {
     if (q === quality) return
     quality = q
-    bloomEnabled = q === 'high'
+    bloomCapable = q === 'high'
+    bloomEnabled = bloomAllowed && bloomCapable
     combinePass.enabled = bloomEnabled
 
     const shadows = q === 'high'
@@ -325,6 +352,13 @@ export function createRenderer(canvas: HTMLCanvasElement): Gfx {
 
   resize()
 
+  function setBloom(on: boolean): void {
+    if (on === bloomAllowed) return
+    bloomAllowed = on
+    bloomEnabled = bloomAllowed && bloomCapable
+    combinePass.enabled = bloomEnabled
+  }
+
   return {
     renderer,
     scene,
@@ -332,6 +366,7 @@ export function createRenderer(canvas: HTMLCanvasElement): Gfx {
     render,
     resize,
     setQuality,
+    setBloom,
     dispose(): void {
       canvas.removeEventListener('webglcontextlost', onContextLost)
       canvas.removeEventListener('webglcontextrestored', onContextRestored)

@@ -55,6 +55,10 @@ const ANCHOR_REFRESH = 8
 const VALUE_PERIOD = 0.3
 /** `metrics()` allocates by contract, so only this many run per frame. */
 const VALUE_BUDGET = 2
+/* Score margin a newcomer must clear to evict a label that is already placed.
+ * Large enough to absorb per-frame distance jitter, small enough that a genuinely
+ * more important label still wins immediately. */
+const INCUMBENT_BONUS = 260
 
 const TIER_DISTRICT = 0
 const TIER_NAME = 1
@@ -336,7 +340,16 @@ export function createLabels(gfx: Gfx, registry: Registry, container: HTMLElemen
       /* Districts outrank components; among components, nearer and closer to
        * the centre of the screen wins, because that is what the user aimed at. */
       const off = Math.abs(sx - cx) + Math.abs(sy - cy)
-      c.score = (c.isDistrict ? 6000 : 2400) + op * 900 - dist * 0.6 - off * 0.25
+      /*
+       * Incumbency bonus: whoever holds a slot keeps it unless clearly beaten.
+       *
+       * The score depends on distance, which changes every frame, so two labels
+       * with nearly equal scores swapped places in the queue from one frame to
+       * the next and the loser lost its slot — the flicker. A label that is
+       * already on screen has to be beaten by a real margin, not by rounding.
+       */
+      const incumbent = c.slot >= 0 ? INCUMBENT_BONUS : 0
+      c.score = (c.isDistrict ? 6000 : 2400) + op * 900 - dist * 0.6 - off * 0.25 + incumbent
       order[n++] = i
     }
 
