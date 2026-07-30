@@ -52,9 +52,18 @@ export const CITY = {
     z: -318,
     w: 74,
     d: 74,
-    /** Lowest pipeline floor's deck height, and the gap between floors. */
+    /**
+     * Lowest pipeline floor's deck height, and the gap between floors.
+     *
+     * The gap is what makes the tower a tower. At 11 the nine stages stacked to
+     * about 115 on a 74 footprint — a stump on a plate over a thousand units
+     * wide, so the city had no landmark and the establishing shot read as a
+     * circuit board. Being the tallest thing here is also the honest claim: the
+     * apiserver is the one door, and every other district talks to it. Routes
+     * derive their heights from `apiFloorY`, so they follow this number.
+     */
     baseY: 16,
-    floorGap: 11,
+    floorGap: 25,
     /** Slab thickness of one pipeline floor. */
     slab: 1.6,
   },

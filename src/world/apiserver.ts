@@ -223,18 +223,49 @@ export function createApiServer(ctx: WorldCtx): WorldModule {
   plinth.position.y = (CITY.api.baseY - SLAB) / 2
 
   const colHeight = API_TOWER_TOP + GAP
-  const colGeo = box(2.4, colHeight, 2.4)
+  /* Corner columns carry the whole stack, so they read as structure rather than
+   * trim; at this height the old 2.4 sections looked like wire. */
+  const colGeo = box(4.2, colHeight, 4.2)
   for (let i = 0; i < 4; i++) {
     const c = mesh(colGeo, 'column', group)
     c.position.set(
-      (i & 1 ? 1 : -1) * (HW - 1.4),
+      (i & 1 ? 1 : -1) * (HW - 2.1),
       colHeight / 2,
-      (i & 2 ? 1 : -1) * (HD - 1.4),
+      (i & 2 ? 1 : -1) * (HD - 2.1),
     )
   }
 
+  /*
+   * Facade mullions. Nothing here means anything — they are matte structure, and
+   * that is the point: a tower whose only vertical elements are four corners has
+   * no scale at orbit distance, and the eye cannot tell 100 units from 250. The
+   * fins give it a rhythm to be read against. Bloom must never touch them, so
+   * they take a matte key and never an emissive one.
+   */
+  const MULLIONS_PER_SIDE = 5
+  const finGeo = box(1.5, colHeight, 1.5)
+  for (let side = 0; side < 4; side++) {
+    const along = side < 2 ? HW : HD
+    for (let i = 0; i < MULLIONS_PER_SIDE; i++) {
+      /* Evenly spaced strictly between the corners, never on top of them. */
+      const t = (i + 1) / (MULLIONS_PER_SIDE + 1)
+      const p = (t * 2 - 1) * (along - 6)
+      const f = mesh(finGeo, 'column', group)
+      f.position.y = colHeight / 2
+      if (side < 2) f.position.set(p, colHeight / 2, (side === 0 ? 1 : -1) * (HD - 0.4))
+      else f.position.set((side === 2 ? 1 : -1) * (HW - 0.4), colHeight / 2, p)
+    }
+  }
+
   const shellGeo = box(W, GAP - 0.3, D)
-  const slabGeo = box(W, SLAB, D)
+  /*
+   * The floor deck oversails the glass so each stage reads as a band from
+   * outside. Taller floors made the tower look like architecture and cost the
+   * thing that matters — the nine stages stopped being countable, and the
+   * pipeline is the whole lesson. The lip puts the count back and happens to be
+   * what gives the facade its horizontal rhythm.
+   */
+  const slabGeo = box(W + 5, SLAB * 1.7, D + 5)
 
   const floors: THREE.Group[] = []
   const shells: THREE.Mesh[] = []
