@@ -126,6 +126,32 @@ function policyAllows(policy: NetworkPolicyState, sourceLabels: Record<string, s
 const INGRESS_LABELS: Record<string, string> = { app: 'ingress-nginx' }
 
 /* ---------------------------------------------------------------------------
+ * The doors into the cluster.
+ * -------------------------------------------------------------------------*/
+
+/** Share of user traffic that arrives at the LoadBalancer's own address. */
+export const LB_TRAFFIC_SHARE = 0.25
+
+/**
+ * External requests per second the cluster actually admits, door by door.
+ *
+ * The traffic knob is what users *send*, not what gets in. There are two
+ * independent doors to the same workload — the Ingress on its hostname, and the
+ * LoadBalancer on its own external IP — and nothing reroutes between them,
+ * because they are different addresses. So deleting one takes its share of the
+ * traffic away for good and leaves the other still serving. Deriving load from
+ * this rather than from the knob is what makes deleting a door observable.
+ */
+export function admittedRps(ctx: SimCtx): { viaIngress: number; viaLb: number; total: number } {
+  const t = ctx.s.knobs.trafficRps
+  const hasLb = ctx.s.services.some((v) => v.type === 'LoadBalancer')
+  const hasIngress = ctx.s.ingresses.length > 0
+  const viaLb = hasLb ? t * LB_TRAFFIC_SHARE : 0
+  const viaIngress = hasIngress ? t * (1 - LB_TRAFFIC_SHARE) : 0
+  return { viaIngress, viaLb, total: viaIngress + viaLb }
+}
+
+/* ---------------------------------------------------------------------------
  * The whole south edge: ingress, services, DNS.
  * -------------------------------------------------------------------------*/
 
@@ -143,10 +169,14 @@ export function tickNetwork(ctx: SimCtx, dt: number): void {
   const webReady = web ? readyEndpoints(web) : 0
   const apiReady = api ? readyEndpoints(api) : 0
 
-  /* The ingress splits traffic between the two paths in its rule list. */
-  const total = knobs.trafficRps
-  const apiPathRps = total * 0.3
-  const webPathRps = total - apiPathRps
+  /* What actually got in, door by door. The ingress then splits its own share
+   * between the two paths in its rule list. */
+  const adm = admittedRps(ctx)
+  const total = adm.total
+  const apiPathRps = adm.viaIngress * 0.3
+  const webPathRps = adm.viaIngress - apiPathRps
+  /* Both doors land on the same web pods, so east-west load follows the sum. */
+  const webTotal = webPathRps + adm.viaLb
 
   /* A policy that selects the api pods drops anything not from the web pods —
    * including the ingress controller, which is precisely the surprise. */
@@ -161,10 +191,12 @@ export function tickNetwork(ctx: SimCtx, dt: number): void {
   }
   if (api) {
     /* East-west traffic from web is allowed by the policy; direct ingress is not. */
-    api.rps = approach(api.rps, total * 0.35 + (apiPathRps - deniedRps), 2, dt)
+    api.rps = approach(api.rps, webTotal * 0.35 + (apiPathRps - deniedRps), 2, dt)
   }
-  if (db) db.rps = approach(db.rps, total * 0.1, 2, dt)
-  if (lb) lb.rps = web ? web.rps : 0
+  if (db) db.rps = approach(db.rps, webTotal * 0.1, 2, dt)
+  /* The LoadBalancer carries its own traffic on its own address — not a mirror
+   * of the Ingress path, or deleting it would change nothing. */
+  if (lb) lb.rps = approach(lb.rps, adm.viaLb, 2, dt)
   if (kubernetes) {
     kubernetes.rps = approach(kubernetes.rps, ctx.s.api.requestsPerSec, 1.5, dt)
   }
@@ -189,15 +221,18 @@ export function tickNetwork(ctx: SimCtx, dt: number): void {
 
   /* Ingress. Its 5xx rate is how a broken rollout becomes a user's problem. */
   for (const ing of ctx.s.ingresses) {
-    ing.rps = approach(ing.rps, total, 2, dt)
+    /* The Ingress reports what arrives at *its* address, so a deleted
+     * LoadBalancer must not show up here as traffic it never received. */
+    ing.rps = approach(ing.rps, adm.viaIngress, 2, dt)
     let target: number
     if (webReady === 0) {
       target = 1
     } else {
       const capacity = webReady * MODEL.rpsPerReadyEndpoint
       const overload = clamp((webPathRps - capacity) / Math.max(1, webPathRps), 0, 1)
-      const apiShare = apiReady === 0 ? apiPathRps / Math.max(1, total) : 0
-      const policyShare = deniedRps / Math.max(1, total)
+      const denom = Math.max(1, adm.viaIngress)
+      const apiShare = apiReady === 0 ? apiPathRps / denom : 0
+      const policyShare = deniedRps / denom
       target = clamp(overload * 0.7 + apiShare + policyShare + 0.002, 0, 1)
     }
     ing.errorRate = approach(ing.errorRate, target, 1.5, dt)

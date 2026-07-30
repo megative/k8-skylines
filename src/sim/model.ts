@@ -27,6 +27,7 @@ import {
   type ControllerId,
   type ControllerState,
   type EtcdMember,
+  type Kind,
   type Knobs,
   type NodeState,
   type SimState,
@@ -37,6 +38,7 @@ import {
   MODEL,
   clampKnobs,
   createStore,
+  deletePod,
   emit,
   key,
   podIsTerminating,
@@ -78,6 +80,24 @@ export interface Sim {
   setKnob<K extends keyof Knobs>(key: K, value: Knobs[K]): void
   runScenario(id: string): void
   stopScenario(): void
+  /**
+   * Delete a cluster object the way `kubectl delete` does: the request goes
+   * through the API pipeline and etcd, and garbage collection cascades to
+   * owned children. Returns false only when no such object exists. Standalone
+   * objects (Ingress, Service, NetworkPolicy) stay gone; controller-owned ones
+   * (a Pod, a ReplicaSet) are recreated by their controller — which is the
+   * lesson, not a bug. There is no create path yet, so `reset()` is the undo.
+   */
+  deleteObject(kind: string, namespace: string, name: string): boolean
+  /**
+   * Create one of the predefined objects the model knows how to run. There is
+   * no arbitrary `apply -f` — the model has fixed workload shapes — so this
+   * only accepts names from `applyCatalogue()`. Idempotent: an object that
+   * already exists is 'unchanged'.
+   */
+  applyObject(kind: string, name: string): ApplyResult
+  /** The predefined objects apply can create. */
+  applyCatalogue(): { kind: string; name: string }[]
   activeScenario: string | null
   scenarios: readonly Scenario[]
   reset(): void
@@ -819,6 +839,247 @@ function stepOnce(ctx: SimCtx, dt: number): void {
 }
 
 /* ---------------------------------------------------------------------------
+ * Deletion.
+ *
+ * A delete is a write like any other: it goes through submit() so it commits
+ * only once etcd has it, which is why deleting while quorum is lost does
+ * nothing until quorum returns. The commit removes the object from state, and
+ * the garbage collector (already reconciling every tick) cascades to whatever
+ * that object owned. Nothing here reaches around the API server.
+ * -------------------------------------------------------------------------*/
+
+/** Match by name, and by namespace when one was given. */
+function nsMatch(objNs: string, wantNs: string): boolean {
+  return wantNs === '' || objNs === wantNs
+}
+
+function submitDelete(ctx: SimCtx, kind: Kind, ns: string, name: string, commit: (c: SimCtx) => void): void {
+  submit(ctx, { verb: 'delete', kind, namespace: ns, name, subject: SUBJECTS.admin, commit })
+}
+
+/**
+ * Delete a cluster object by kind and name. Returns whether one was found; the
+ * removal itself happens a few ticks later, when the write commits — exactly
+ * as `kubectl delete` returns before the object is fully gone.
+ */
+function deleteClusterObject(ctx: SimCtx, kind: string, ns: string, name: string): boolean {
+  const s = ctx.s
+  switch (kind) {
+    case 'ingress': {
+      if (!s.ingresses.some((x) => x.name === name && nsMatch(x.namespace, ns))) return false
+      submitDelete(ctx, 'Ingress', ns, name, (c) => {
+        spliceBy(c.s.ingresses, name, ns)
+        emit(c, 'Normal', 'Deleted', `ingress/${name}`, `Deleted ingress ${name}; external traffic no longer reaches its backends`)
+      })
+      return true
+    }
+    case 'service': {
+      if (!s.services.some((x) => x.name === name && nsMatch(x.namespace, ns))) return false
+      submitDelete(ctx, 'Service', ns, name, (c) => {
+        spliceBy(c.s.services, name, ns)
+        /* The pods behind it keep running; only the rule tables that routed to
+         * them disappear, which kube-proxy rebuilds empty on the next sync. */
+        emit(c, 'Normal', 'Deleted', `service/${name}`, `Deleted service ${name}; its rule tables are removed from every node`)
+      })
+      return true
+    }
+    case 'networkpolicy': {
+      if (!s.networkPolicies.some((x) => x.name === name && nsMatch(x.namespace, ns))) return false
+      submitDelete(ctx, 'NetworkPolicy', ns, name, (c) => {
+        spliceBy(c.s.networkPolicies, name, ns)
+        /* The knob is what recreates this policy every tick, so deleting the
+         * object means turning it off — anything else and it comes right back. */
+        c.s.knobs.networkPolicyEnabled = false
+        emit(c, 'Normal', 'Deleted', `networkpolicy/${name}`, `Deleted networkpolicy ${name}; its selected pods are no longer default-deny`)
+      })
+      return true
+    }
+    case 'horizontalpodautoscaler': {
+      if (!s.hpas.some((x) => x.name === name && nsMatch(x.namespace, ns))) return false
+      submitDelete(ctx, 'HorizontalPodAutoscaler', ns, name, (c) => {
+        spliceBy(c.s.hpas, name, ns)
+        /* The knob no longer has an object to drive, so replicas stop moving on
+         * their own. Turn the knob off too, or a resync would recreate nothing
+         * but the reader would still expect autoscaling. */
+        c.s.knobs.hpaEnabled = false
+        emit(c, 'Normal', 'Deleted', `horizontalpodautoscaler/${name}`, `Deleted hpa ${name}; the replica count is manual again`)
+      })
+      return true
+    }
+    case 'persistentvolumeclaim': {
+      if (!s.pvcs.some((x) => x.name === name && nsMatch(x.namespace, ns))) return false
+      submitDelete(ctx, 'PersistentVolumeClaim', ns, name, (c) => {
+        spliceBy(c.s.pvcs, name, ns)
+        enqueueKey(c, 'garbage-collector', 'cluster')
+        emit(c, 'Normal', 'Deleted', `persistentvolumeclaim/${name}`, `Deleted pvc ${name}; its PersistentVolume is released`)
+      })
+      return true
+    }
+    case 'deployment': {
+      const d = s.deployments.find((x) => x.name === name && nsMatch(x.namespace, ns))
+      if (!d) return false
+      submitDelete(ctx, 'Deployment', d.namespace, name, (c) => {
+        spliceBy(c.s.deployments, name, d.namespace)
+        c.store.deploySpecs.delete(key(d.namespace, name))
+        /* The garbage collector removes the now-ownerless ReplicaSets, and
+         * their pods orphan and follow. Kick it so the cascade starts now. */
+        enqueueKey(c, 'garbage-collector', 'cluster')
+        emit(c, 'Normal', 'Deleted', `deployment/${name}`, `Deleted deployment ${name}; its ReplicaSets and pods are garbage-collected`)
+      })
+      return true
+    }
+    case 'replicaset': {
+      const r = s.replicaSets.find((x) => x.name === name && nsMatch(x.namespace, ns))
+      if (!r) return false
+      submitDelete(ctx, 'ReplicaSet', r.namespace, name, (c) => {
+        spliceBy(c.s.replicaSets, name, r.namespace)
+        c.store.rsTemplate.delete(key(r.namespace, name))
+        /* If a Deployment still owns it, that controller recreates a current
+         * ReplicaSet to hold the desired count — the pods come back. */
+        enqueueKey(c, 'deployment', key(r.namespace, r.ownerDeployment))
+        enqueueKey(c, 'garbage-collector', 'cluster')
+        emit(c, 'Normal', 'Deleted', `replicaset/${name}`, `Deleted replicaset ${name}`)
+      })
+      return true
+    }
+    case 'pod': {
+      const pod = [...s.pods.values()].find((p) => p.name === name && nsMatch(p.namespace, ns))
+      if (!pod) return false
+      const uid = pod.uid
+      submitDelete(ctx, 'Pod', pod.namespace, name, (c) => {
+        /* Graceful, like the real API: the object lingers for its grace period
+         * and its controller creates a replacement to restore the count. */
+        deletePod(c, uid, 'Deleted')
+      })
+      return true
+    }
+    default:
+      return false
+  }
+}
+
+/** Remove the first element matching name (and namespace, if given). */
+function spliceBy<T extends { name: string; namespace: string }>(arr: T[], name: string, ns: string): void {
+  const i = arr.findIndex((x) => x.name === name && nsMatch(x.namespace, ns))
+  if (i >= 0) arr.splice(i, 1)
+}
+
+/* ---------------------------------------------------------------------------
+ * Apply.
+ *
+ * There is no general `apply -f`: the model runs specific workloads with
+ * specific shapes, not arbitrary specs, and pretending otherwise would teach
+ * that it is a Kubernetes engine. So apply can only (re)create objects from the
+ * seed catalogue — the same definitions bootstrap uses. It is idempotent, like
+ * the real thing: applying an object that already exists changes nothing, and
+ * it too goes through the API pipeline.
+ * -------------------------------------------------------------------------*/
+
+const APPLY_NETWORKPOLICY = 'api-allow-web'
+
+export type ApplyResult = 'created' | 'unchanged' | 'unknown'
+
+/** The predefined objects apply can create, so the UI can list and complete
+ *  them. Built from the seed, plus the one knob-backed policy. */
+function applyCatalogueOf(catalogue: SimState): { kind: string; name: string }[] {
+  const out: { kind: string; name: string }[] = []
+  for (const d of catalogue.deployments) out.push({ kind: 'deployment', name: d.name })
+  for (const v of catalogue.services) out.push({ kind: 'service', name: v.name })
+  for (const i of catalogue.ingresses) out.push({ kind: 'ingress', name: i.name })
+  for (const h of catalogue.hpas) out.push({ kind: 'horizontalpodautoscaler', name: h.name })
+  for (const p of catalogue.pvcs) out.push({ kind: 'persistentvolumeclaim', name: p.name })
+  out.push({ kind: 'networkpolicy', name: APPLY_NETWORKPOLICY })
+  return out
+}
+
+function applyClusterObject(ctx: SimCtx, catalogue: SimState, kind: string, name: string): ApplyResult {
+  const s = ctx.s
+
+  /* Recreate `seedObj` into `live` via the API, unless it is already there.
+   * `register` runs in the commit, after the create lands in etcd. */
+  function create<T extends { name: string; namespace: string }>(
+    live: T[],
+    seedList: readonly T[],
+    apiKind: Kind,
+    register: (c: SimCtx, obj: T) => void,
+  ): ApplyResult {
+    if (live.some((x) => x.name === name)) return 'unchanged'
+    const seedObj = seedList.find((x) => x.name === name)
+    if (!seedObj) return 'unknown'
+    const obj = structuredClone(seedObj) as T
+    submit(ctx, {
+      verb: 'create',
+      kind: apiKind,
+      namespace: obj.namespace,
+      name,
+      subject: SUBJECTS.admin,
+      commit: (c) => {
+        if (live.some((x) => x.name === name)) return
+        register(c, obj)
+      },
+    })
+    return 'created'
+  }
+
+  switch (kind) {
+    case 'deployment':
+      return create(s.deployments, catalogue.deployments, 'Deployment', (c, obj) => {
+        /* installSpecs re-registers the workload template this Deployment needs
+         * to make pods; it is keyed by name and idempotent for the others. */
+        installSpecs(c)
+        c.s.deployments.push(obj)
+        enqueueKey(c, 'deployment', key(obj.namespace, name))
+        emit(c, 'Normal', 'Applied', `deployment/${name}`, `Created deployment ${name}`)
+      })
+    case 'service':
+      return create(s.services, catalogue.services, 'Service', (c, obj) => {
+        c.s.services.push(obj)
+        enqueueKey(c, 'endpointslice', key(obj.namespace, name))
+        emit(c, 'Normal', 'Applied', `service/${name}`, `Created service ${name}`)
+      })
+    case 'ingress':
+      return create(s.ingresses, catalogue.ingresses, 'Ingress', (c, obj) => {
+        c.s.ingresses.push(obj)
+        emit(c, 'Normal', 'Applied', `ingress/${name}`, `Created ingress ${name}`)
+      })
+    case 'persistentvolumeclaim':
+      return create(s.pvcs, catalogue.pvcs, 'PersistentVolumeClaim', (c, obj) => {
+        c.s.pvcs.push(obj)
+        enqueueKey(c, 'pv-binder', key(obj.namespace, name))
+        emit(c, 'Normal', 'Applied', `persistentvolumeclaim/${name}`, `Created pvc ${name}`)
+      })
+    case 'horizontalpodautoscaler':
+      return create(s.hpas, catalogue.hpas, 'HorizontalPodAutoscaler', (c, obj) => {
+        c.s.hpas.push(obj)
+        /* An HPA with the knob off would exist but never scale — applying it is
+         * a request for autoscaling, so turn it on. */
+        c.s.knobs.hpaEnabled = true
+        enqueueKey(c, 'hpa', key(obj.namespace, name))
+        emit(c, 'Normal', 'Applied', `horizontalpodautoscaler/${name}`, `Created hpa ${name}`)
+      })
+    case 'networkpolicy': {
+      if (name !== APPLY_NETWORKPOLICY) return 'unknown'
+      if (s.knobs.networkPolicyEnabled && s.networkPolicies.some((p) => p.name === name)) return 'unchanged'
+      /* The knob is the mechanism that creates this policy each tick; route the
+       * create through the API so it, too, waits on etcd. */
+      submit(ctx, {
+        verb: 'create',
+        kind: 'NetworkPolicy',
+        namespace: 'shop',
+        name,
+        subject: SUBJECTS.admin,
+        commit: (c) => {
+          c.s.knobs.networkPolicyEnabled = true
+        },
+      })
+      return 'created'
+    }
+    default:
+      return 'unknown'
+  }
+}
+
+/* ---------------------------------------------------------------------------
  * createSim.
  * -------------------------------------------------------------------------*/
 
@@ -851,6 +1112,12 @@ export function createSim(seed = 0x5eed1234): Sim {
     rng: new Rng(seed),
     store: createStore(CONTROLLER_IDS.slice()),
   }
+
+  /* The apply catalogue: a pristine copy of the seed cluster. This model has no
+   * general `apply -f` — it does not run arbitrary specs — so `apply` can only
+   * (re)create the objects it was built to simulate. Snapshotting the seed here
+   * means apply and the initial bootstrap are the exact same definitions. */
+  const catalogue = createState()
 
   const watcher = (c: SimCtx, kind: Parameters<typeof controllerWatch>[1], ns: string, name: string): void => {
     controllerWatch(c, kind, ns, name)
@@ -930,6 +1197,18 @@ export function createSim(seed = 0x5eed1234): Sim {
       def.start(ctx)
       emit(ctx, 'Normal', 'ScenarioStarted', `scenario/${id}`, def.title)
       bus.emit('scenario', { id, running: true })
+    },
+
+    deleteObject(kind: string, namespace: string, name: string): boolean {
+      return deleteClusterObject(ctx, kind, namespace, name)
+    },
+
+    applyObject(kind: string, name: string): ApplyResult {
+      return applyClusterObject(ctx, catalogue, kind, name)
+    },
+
+    applyCatalogue(): { kind: string; name: string }[] {
+      return applyCatalogueOf(catalogue)
     },
 
     stopScenario(): void {

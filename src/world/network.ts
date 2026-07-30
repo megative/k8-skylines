@@ -714,7 +714,8 @@ export function createNetwork(ctx: WorldCtx): WorldModule {
    * about where the road runs.
    * ----------------------------------------------------------------------*/
   const extCurve = routeCurve('external-to-ingress')
-  const intCurve = routeCurve('ingress-to-nodes')
+  /* The district's own packets ride the web leg: Ingress -> Service -> pods. */
+  const intCurve = routeCurve('ingress-to-svc-web')
   /* Warm the arc-length cache once; getPointAt must not build it mid-frame. */
   extCurve.getLengths(200)
   intCurve.getLengths(200)

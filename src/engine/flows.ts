@@ -208,8 +208,15 @@ export function createFlows(ctx: WorldCtx): Flows {
   const R_API_NODES = byId.get('api-to-nodes')!
   const R_REGISTRY = byId.get('registry-to-nodes')!
   const R_STORAGE = byId.get('storage-to-nodes')!
-  const R_INGRESS = byId.get('ingress-to-nodes')!
   const R_EXTERNAL = byId.get('external-to-ingress')!
+  /* The traffic fork: the Ingress names two backend Services, and the
+   * LoadBalancer is a third door with its own address. Six legs, not one line. */
+  const R_ING_WEB = byId.get('ingress-to-svc-web')!
+  const R_ING_API = byId.get('ingress-to-svc-api')!
+  const R_SVC_WEB = byId.get('svc-web-to-nodes')!
+  const R_SVC_API = byId.get('svc-api-to-nodes')!
+  const R_LB_SVC = byId.get('lb-to-svc')!
+  const R_SVC_LB = byId.get('svc-lb-to-nodes')!
 
   /* ------------------------------------------------------------------------
    * One InstancedMesh per kind: one geometry, one material, one draw call.
@@ -402,7 +409,32 @@ export function createFlows(ctx: WorldCtx): Flows {
       }
     }
     routes[R_EXTERNAL].rate = Math.min(MAX_RATE, extRps / RPS_PER_GLYPH)
-    routes[R_INGRESS].rate = Math.min(MAX_RATE, servedRps / RPS_PER_GLYPH)
+    /*
+     * Glyphs follow the objects, not a drawn shortcut. The Ingress rule list
+     * splits its own traffic between the two backend Services, and each leg
+     * continues from that Service down into the node grid. The LoadBalancer
+     * carries what arrives at its own address and never touches the Ingress.
+     */
+    const svcOf = (name: string): { rps: number } | undefined => {
+      const list = s.services
+      if (!list) return undefined
+      for (let i = 0; i < list.length; i++) if (list[i].name === name) return list[i]
+      return undefined
+    }
+    const webSvc = svcOf('web')
+    const apiSvc = svcOf('api')
+    const lbSvc = svcOf('web-lb')
+    /* Served traffic in the ratio the Ingress rules actually carry. */
+    const served = servedRps / RPS_PER_GLYPH
+    const webShare = Math.min(MAX_RATE, served * 0.7)
+    const apiShare = Math.min(MAX_RATE, served * 0.3)
+    routes[R_ING_WEB].rate = webSvc ? webShare : 0
+    routes[R_ING_API].rate = apiSvc ? apiShare : 0
+    routes[R_SVC_WEB].rate = webSvc ? Math.min(MAX_RATE, webSvc.rps / RPS_PER_GLYPH) : 0
+    routes[R_SVC_API].rate = apiSvc ? Math.min(MAX_RATE, apiSvc.rps / RPS_PER_GLYPH) : 0
+    const lbRate = lbSvc ? Math.min(MAX_RATE, lbSvc.rps / RPS_PER_GLYPH) : 0
+    routes[R_LB_SVC].rate = lbRate
+    routes[R_SVC_LB].rate = lbRate
 
     /* Disk latency is what etcd's health actually is: a proposal cannot commit
      * faster than the slowest member of the quorum can fsync it. */

@@ -9,7 +9,8 @@
  * that sets `display` has to restore the hidden case itself. */
 #search[hidden],
 #help[hidden],
-#tour[hidden] {
+#tour[hidden],
+#console[hidden] {
   display: none;
 }
 
@@ -629,4 +630,576 @@ code.tour-code {
     grid-template-columns: 1fr;
     gap: 0.15rem;
   }
+}
+
+/* ============================================================== kubectl console
+
+   A terminal, not a list. Monospace throughout, a scrollback that grows
+   upward, and a single prompt line pinned to the bottom. */
+
+#console {
+  inset: 0;
+  display: grid;
+  justify-items: center;
+  align-items: end;
+  padding: 1rem 1rem clamp(4.5rem, 12vh, 8rem);
+}
+
+.kc-scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(3, 5, 9, 0.5);
+  backdrop-filter: blur(2px);
+}
+
+:root[data-theme='day'] .kc-scrim {
+  background: rgba(16, 23, 32, 0.3);
+}
+
+.kc {
+  position: relative;
+  width: min(58rem, 100%);
+  height: min(30rem, 70vh);
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--k8-radius, 10px);
+  border: 1px solid var(--k8-border, #26314a);
+  background: var(--k8-panel, rgba(11, 15, 24, 0.96));
+  box-shadow: var(--k8-shadow, 0 24px 64px rgba(0, 0, 0, 0.6));
+  color: var(--k8-text, #e8eef6);
+  overflow: hidden;
+}
+
+.kc-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.7rem;
+  border-bottom: 1px solid var(--k8-border, #26314a);
+}
+
+.kc-dot {
+  width: 0.62rem;
+  height: 0.62rem;
+  border-radius: 50%;
+  background: var(--k8-failed, #ff4d5e);
+  box-shadow: 1rem 0 0 var(--k8-accent, #38e8ff), 2rem 0 0 var(--k8-ready, #4fe08a);
+  margin-right: 1.5rem;
+}
+
+.kc-title {
+  flex: 1;
+  font-family: var(--k8-mono, ui-monospace, Menlo, monospace);
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  color: var(--k8-dim, #8b97ab);
+  text-align: center;
+}
+
+.kc-esc {
+  font-family: var(--k8-mono, ui-monospace, Menlo, monospace);
+  font-size: 0.72rem;
+  color: var(--k8-dim, #8b97ab);
+  border: 1px solid var(--k8-border, #26314a);
+  border-radius: 5px;
+  padding: 0.05rem 0.35rem;
+}
+
+.kc-out {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.6rem 0.85rem;
+  font-family: var(--k8-mono, ui-monospace, Menlo, monospace);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.kc-row {
+  white-space: pre;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.kc-row::-webkit-scrollbar {
+  display: none;
+}
+
+.kc-head {
+  color: var(--k8-dim, #8b97ab);
+  font-weight: 600;
+}
+
+.kc-dim {
+  color: var(--k8-dim, #8b97ab);
+}
+
+.kc-err {
+  color: var(--k8-failed, #ff4d5e);
+}
+
+.kc-ok {
+  color: var(--k8-ready, #4fe08a);
+}
+
+.kc-echo {
+  color: var(--k8-text, #e8eef6);
+  white-space: pre-wrap;
+}
+
+.kc-echo .kc-prompt {
+  color: var(--k8-accent, #38e8ff);
+}
+
+.kc-line {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.85rem;
+  border-top: 1px solid var(--k8-border, #26314a);
+}
+
+.kc-prompt {
+  color: var(--k8-accent, #38e8ff);
+  font-family: var(--k8-mono, ui-monospace, Menlo, monospace);
+  font-weight: 700;
+}
+
+/* The input and its ghost share one box so the dim completion lines up under
+   the real text to the pixel. Both use the exact same monospace metrics. */
+.kc-field {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 1.2rem;
+}
+
+.kc-input,
+.kc-ghost {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  border: 0;
+  padding: 0;
+  font: 400 0.85rem/1.2 var(--k8-mono, ui-monospace, Menlo, monospace);
+  white-space: pre;
+  overflow: hidden;
+}
+
+.kc-input {
+  z-index: 1;
+  background: transparent;
+  outline: none;
+  color: var(--k8-text, #e8eef6);
+}
+
+.kc-ghost {
+  pointer-events: none;
+  color: transparent;
+}
+
+.kc-ghost-suffix {
+  color: var(--k8-dim, #8b97ab);
+  opacity: 0.7;
+}
+
+/* The completion menu: a strip of candidate chips above the prompt. */
+.kc-menu {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  padding: 0.45rem 0.85rem;
+  max-height: 5.5rem;
+  overflow-y: auto;
+  border-top: 1px solid var(--k8-border, #26314a);
+}
+
+.kc-menu[hidden] {
+  display: none;
+}
+
+.kc-chip {
+  appearance: none;
+  border: 1px solid var(--k8-border, #26314a);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--k8-dim, #8b97ab);
+  font: 400 0.72rem/1 var(--k8-mono, ui-monospace, Menlo, monospace);
+  padding: 0.2rem 0.45rem;
+  cursor: pointer;
+}
+
+.kc-chip:hover {
+  color: var(--k8-text, #e8eef6);
+}
+
+.kc-chip.is-on {
+  border-color: color-mix(in srgb, var(--k8-accent, #38e8ff) 60%, transparent);
+  background: color-mix(in srgb, var(--k8-accent, #38e8ff) 14%, transparent);
+  color: var(--k8-accent, #38e8ff);
+}
+
+.kc-foot {
+  display: flex;
+  gap: 1rem;
+  padding: 0.4rem 0.85rem;
+  border-top: 1px solid var(--k8-border, #26314a);
+  font-size: 0.625rem;
+  color: var(--k8-dim, #8b97ab);
+}
+
+/* ================================================================ path reader
+
+   A dock on the left: pick a chain, walk it a hop at a time. Deliberately not
+   modal — the city stays visible and interactive behind it, because the whole
+   point is to watch the lit route while reading the step. */
+
+#paths {
+  inset: auto auto 5.5rem 1rem;
+  max-width: min(23rem, calc(100vw - 2rem));
+  pointer-events: none;
+}
+
+#paths[hidden] {
+  display: none;
+}
+
+.pth {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  max-height: min(30rem, 62vh);
+  border-radius: var(--k8-radius, 10px);
+  border: 1px solid var(--k8-border, #26314a);
+  background: var(--k8-panel, rgba(11, 15, 24, 0.96));
+  box-shadow: var(--k8-shadow, 0 24px 64px rgba(0, 0, 0, 0.6));
+  color: var(--k8-text, #e8eef6);
+  overflow: hidden;
+}
+
+.pth-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.7rem 0.9rem 0.35rem;
+}
+
+.pth-title {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 640;
+  letter-spacing: 0.02em;
+}
+
+.pth-close {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--k8-dim, #8b97ab);
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0.15rem 0.3rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.pth-close:hover {
+  color: var(--k8-text, #e8eef6);
+  background: color-mix(in srgb, var(--k8-text, #e8eef6) 10%, transparent);
+}
+
+.pth-blurb {
+  margin: 0 0.9rem 0.5rem;
+  font-size: 0.6875rem;
+  line-height: 1.45;
+  color: var(--k8-dim, #8b97ab);
+}
+
+.pth-list {
+  display: flex;
+  flex-direction: column;
+  padding: 0 0.45rem 0.35rem;
+  overflow-y: auto;
+  flex: 0 1 auto;
+  max-height: 40%;
+}
+
+.pth-pick-back .pth-pick-blurb::before {
+  content: '↩ ';
+}
+
+.pth-pick {
+  appearance: none;
+  border: 0;
+  border-left: 2px solid transparent;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.4rem 0.45rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.pth-pick:hover {
+  background: color-mix(in srgb, var(--k8-text, #e8eef6) 7%, transparent);
+}
+
+.pth-pick.is-on {
+  border-left-color: var(--k8-ready, #4fe08a);
+  background: color-mix(in srgb, var(--k8-ready, #4fe08a) 12%, transparent);
+}
+
+.pth-pick-title {
+  font-size: 0.75rem;
+  font-weight: 560;
+}
+
+.pth-pick-blurb {
+  font-size: 0.6563rem;
+  line-height: 1.35;
+  color: var(--k8-dim, #8b97ab);
+}
+
+.pth-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0.3rem 0.45rem 0.5rem;
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  border-top: 1px solid var(--k8-border, #26314a);
+  counter-reset: hop;
+}
+
+.pth-step {
+  counter-increment: hop;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.35rem 0.5rem 0.35rem 1.9rem;
+  border-radius: 6px;
+  cursor: pointer;
+  position: relative;
+  opacity: 0.55;
+}
+
+.pth-step::before {
+  content: counter(hop);
+  position: absolute;
+  left: 0.45rem;
+  top: 0.38rem;
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 50%;
+  border: 1px solid var(--k8-border, #26314a);
+  font-family: var(--k8-mono, ui-monospace, Menlo, monospace);
+  font-size: 0.5938rem;
+  line-height: 1.05rem;
+  text-align: center;
+  color: var(--k8-dim, #8b97ab);
+}
+
+.pth-step.is-done {
+  opacity: 0.75;
+}
+
+.pth-step.is-on {
+  opacity: 1;
+  background: color-mix(in srgb, var(--k8-ready, #4fe08a) 12%, transparent);
+}
+
+.pth-step.is-on::before {
+  border-color: var(--k8-ready, #4fe08a);
+  color: var(--k8-ready, #4fe08a);
+}
+
+.pth-step-title {
+  font-size: 0.75rem;
+  font-weight: 560;
+}
+
+.pth-step-detail {
+  font-size: 0.6563rem;
+  line-height: 1.45;
+  color: color-mix(in srgb, var(--k8-text, #e8eef6) 76%, transparent);
+}
+
+.pth-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.9rem 0.7rem;
+  border-top: 1px solid var(--k8-border, #26314a);
+}
+
+.pth-btn {
+  appearance: none;
+  border: 1px solid var(--k8-border, #26314a);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--k8-text, #e8eef6);
+  font: 550 0.7rem/1 var(--k8-sans, system-ui, sans-serif);
+  padding: 0.4rem 0.65rem;
+  cursor: pointer;
+}
+
+.pth-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--k8-text, #e8eef6) 8%, transparent);
+}
+
+.pth-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.pth-btn-primary {
+  border-color: color-mix(in srgb, var(--k8-ready, #4fe08a) 55%, transparent);
+  background: color-mix(in srgb, var(--k8-ready, #4fe08a) 16%, transparent);
+  color: var(--k8-ready, #4fe08a);
+}
+
+.pth-count {
+  margin-left: auto;
+  font-family: var(--k8-mono, ui-monospace, Menlo, monospace);
+  font-size: 0.6563rem;
+  color: var(--k8-dim, #8b97ab);
+}
+
+/* Labels are DOM, so the scene's scrim cannot reach them. While a chain is
+   isolated they step back rather than disappear: a reader still needs to know
+   which district they are looking at. */
+#labels.is-traced {
+  opacity: 0.22;
+  transition: opacity 0.25s ease;
+}
+
+/* ================================================================== the plan
+
+   The flat view. It covers the canvas rather than sitting beside it: the two
+   representations answer the same question and competing for the same screen
+   would make both worse. Interactive in the same sense the city is — hover to
+   find a thing, click to have it explained. */
+
+#plan {
+  position: fixed;
+  inset: 2.6rem 0 4.6rem;
+  display: grid;
+  place-items: center;
+  padding: 0.6rem 1rem;
+  background: var(--k8-bg);
+  z-index: 5;
+}
+
+#plan[hidden] {
+  display: none;
+}
+
+/* The city's floating labels are DOM anchored to 3D positions, so they have no
+   idea the flat view is up and were drifting across it. */
+:root[data-view='plan'] #labels {
+  display: none;
+}
+
+.pl-svg {
+  width: 100%;
+  height: 100%;
+  max-width: 78rem;
+  font-family: var(--k8-sans, system-ui, sans-serif);
+}
+
+/* Bands name a layer of the cluster; they are scenery, so they stay quiet. */
+.pl-band {
+  fill: color-mix(in srgb, var(--k8-text) 4%, transparent);
+  stroke: var(--k8-border);
+  stroke-width: 1;
+}
+
+.pl-band-t {
+  fill: var(--k8-dim);
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: 0.14em;
+}
+
+/* A box carries its mechanism's colour, exactly as the city does. */
+.pl-rect {
+  fill: color-mix(in srgb, var(--pl-accent) 13%, var(--k8-panel));
+  stroke: color-mix(in srgb, var(--pl-accent) 62%, transparent);
+  stroke-width: 1.4;
+}
+
+.pl-t {
+  fill: var(--k8-text);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.pl-t-s {
+  font-size: 11px;
+}
+
+.pl-sub {
+  fill: var(--k8-dim);
+  font-size: 9.5px;
+}
+
+.pl-stat {
+  fill: var(--pl-accent, var(--k8-dim));
+  font-size: 9.5px;
+  font-weight: 600;
+  font-family: var(--k8-mono, ui-monospace, Menlo, monospace);
+}
+
+/* Interaction: the same two states the picker gives you in the city. */
+.pl-box,
+.pl-pod {
+  cursor: pointer;
+}
+
+.pl-box:hover .pl-rect,
+.pl-box:focus-visible .pl-rect {
+  fill: color-mix(in srgb, var(--pl-accent) 26%, var(--k8-panel));
+  stroke: var(--pl-accent);
+}
+
+.pl-box.is-on .pl-rect {
+  fill: color-mix(in srgb, var(--pl-accent) 30%, var(--k8-panel));
+  stroke: var(--pl-accent);
+  stroke-width: 2.4;
+}
+
+.pl-box:focus-visible,
+.pl-pod:focus-visible {
+  outline: none;
+}
+
+.pl-pod-r {
+  fill: var(--pl-accent);
+  stroke: color-mix(in srgb, var(--pl-accent) 70%, #000);
+  stroke-width: 0.8;
+}
+
+.pl-pod:hover .pl-pod-r,
+.pl-pod:focus-visible .pl-pod-r {
+  stroke: var(--k8-text);
+  stroke-width: 1.6;
+}
+
+.pl-pod.is-on .pl-pod-r {
+  stroke: var(--k8-text);
+  stroke-width: 2;
+}
+
+/* Wires are relationships. Dashed means "a watch", i.e. the far end pulls. */
+.pl-wire {
+  fill: none;
+  stroke: color-mix(in srgb, var(--pl-accent) 55%, transparent);
+  stroke-width: 1.6;
+}
+
+.pl-wire-dash {
+  stroke-dasharray: 4 3;
 }

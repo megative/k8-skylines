@@ -728,11 +728,6 @@ export function createControls(bus: Bus, knobs: Knobs): Controls {
     bus.emit('overlay', { id: 'labels', open: labelsOn })
   }
 
-  const toggleTheme = (): void => {
-    const day = document.documentElement.dataset.theme === 'day'
-    bus.emit('theme', { mode: day ? 'night' : 'day' })
-  }
-
   const isTyping = (target: EventTarget | null): boolean => {
     const el = target as HTMLElement | null
     if (!el || typeof el.tagName !== 'string') return false
@@ -750,7 +745,6 @@ export function createControls(bus: Bus, knobs: Knobs): Controls {
     if (k === 'k' || k === 'K' || k === 'p' || k === 'P') setTransport(!knobs.paused, knobs.timeScale)
     else if (k === ',' || k === '<') nudgeSpeed(-1)
     else if (k === '.' || k === '>') nudgeSpeed(1)
-    else if (k === 'n' || k === 'N') toggleTheme()
     else if (k === 'l' || k === 'L') toggleLabels()
     else if (k === 'r' || k === 'R') resetAll()
     else handled = false

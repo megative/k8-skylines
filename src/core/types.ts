@@ -92,6 +92,7 @@ export type Kind =
   | 'Service'
   | 'EndpointSlice'
   | 'Ingress'
+  | 'NetworkPolicy'
   | 'ConfigMap'
   | 'Secret'
   | 'PersistentVolume'

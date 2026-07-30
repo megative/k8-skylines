@@ -1254,7 +1254,7 @@ export function createCameraRig(gfx: Gfx, dom: HTMLElement, bus: Bus): CameraRig
    * Track them by id, and let only the surfaces that genuinely take the whole
    * keyboard count.
    */
-  const KEYBOARD_OWNERS = new Set(['help', 'search', 'tour', 'scenarios'])
+  const KEYBOARD_OWNERS = new Set(['help', 'search', 'tour', 'scenarios', 'console'])
   const openOverlays = new Set<string>()
   const offOverlay = bus.on('overlay', ({ id, open }) => {
     if (!KEYBOARD_OWNERS.has(id)) return

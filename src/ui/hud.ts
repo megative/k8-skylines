@@ -13,6 +13,7 @@
  * ==========================================================================*/
 
 import type { Bus } from '../core/bus'
+import { HELM_SVG } from './brand'
 import { registry } from '../core/registry'
 import { ETCD_QUORUM, type ClusterEvent, type SimState } from '../core/types'
 import { clamp, formatAge, formatCpu, formatMem, formatMs } from '../core/util'
@@ -360,7 +361,9 @@ export function createHud(bus: Bus): Hud {
   top.append(strip)
 
   const brand = make('div', 'hud-brand')
-  brand.append(make('span', 'hud-brand-mark', 'K8'), make('span', 'hud-brand-word', 'SKYLINES'))
+  const mark = make('span', 'hud-brand-mark')
+  mark.innerHTML = HELM_SVG
+  brand.append(mark, make('span', 'hud-brand-word', 'K8SKYLINES'))
   strip.append(brand)
 
   const nodesCell = make('div', 'hud-cell')

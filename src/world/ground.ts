@@ -24,6 +24,16 @@ import type { WorldCtx, WorldModule } from './module'
 
 const G = CITY.ground
 
+/* The platform is a ship's helm — Kubernetes is the helmsman, and the whole
+ * city stands on the wheel, the way the reference city stands on its mascot.
+ * The disc holds every district; seven handle tabs on the rim make the
+ * silhouette a wheel rather than a plate. Centred near the city's own centre so
+ * nothing overhangs the edge. */
+const PLAT_CZ = 20
+const PLAT_R = 720
+const HANDLE_N = 7
+const HANDLE_OUT = 54
+
 /* The excavation, restated from CITY.pit in the form the geometry needs. */
 const PIT_X0 = CITY.pit.x - CITY.pit.hx
 const PIT_X1 = CITY.pit.x + CITY.pit.hx
@@ -154,6 +164,33 @@ function rectShape(x0: number, x1: number, z0: number, z1: number): THREE.Shape 
   return s
 }
 
+/**
+ * The platform outline: a disc of radius PLAT_R with seven handle tabs standing
+ * out past the rim, so the whole footprint reads as a ship's helm from above.
+ * Built as a polyline in shape space (where z maps to -y).
+ */
+function helmShape(): THREE.Shape {
+  const s = new THREE.Shape()
+  const steps = 630
+  const stalkHalf = 0.05 /* radians; the angular width of a handle tab */
+  for (let i = 0; i <= steps; i++) {
+    const th = (i / steps) * Math.PI * 2
+    let r = PLAT_R
+    for (let k = 0; k < HANDLE_N; k++) {
+      const a = -Math.PI / 2 + (k * 2 * Math.PI) / HANDLE_N
+      /* Wrapped angular distance to this handle. */
+      const d = Math.abs(Math.atan2(Math.sin(th - a), Math.cos(th - a)))
+      if (d < stalkHalf) r = PLAT_R + HANDLE_OUT
+    }
+    const x = r * Math.cos(th)
+    const z = r * Math.sin(th) + PLAT_CZ
+    if (i === 0) s.moveTo(x, -z)
+    else s.lineTo(x, -z)
+  }
+  s.closePath()
+  return s
+}
+
 function rectHole(x0: number, x1: number, z0: number, z1: number): THREE.Path {
   const p = new THREE.Path()
   p.moveTo(x0, -z1)
@@ -245,13 +282,21 @@ export function createGround(ctx: WorldCtx): WorldModule {
 
   /* ------------------------------------------------------- the ground plane */
 
-  const groundShape = rectShape(-G, G, -G, G)
+  const groundShape = helmShape()
   groundShape.holes.push(rectHole(PIT_X0, PIT_X1, PIT_Z0, PIT_Z1))
   const groundGeo = keep(new THREE.ShapeGeometry(groundShape, 1))
   groundGeo.rotateX(-Math.PI / 2)
   const groundMesh = add(groundGeo, 'ground')
   groundMesh.receiveShadow = true
   groundMesh.name = 'grade'
+
+  /* The wheel's rim, as low structural relief so the platform reads as a helm
+     rather than a plain disc. Matte, not emissive: it is the ground the city
+     stands on, not a signal. */
+  const rimGeo = keep(new THREE.TorusGeometry(PLAT_R, 5, 10, 200))
+  const rim = add(rimGeo, 'concrete')
+  rim.rotation.x = -Math.PI / 2
+  rim.position.set(0, 2, PLAT_CZ)
 
   /* ------------------------------------------------------------- the grid */
 
@@ -751,10 +796,12 @@ export function createGround(ctx: WorldCtx): WorldModule {
     if (!owner) continue
     for (const b of districtBars[i]!) ctx.registry.bind(b, owner)
   }
-  /* The grade itself is the data plane's ground; the grid is how it is scaled. */
+  /* The grade itself is the data plane's ground; the grid is how it is scaled.
+   * The platform's rim is part of that same ground, not a separate mechanism. */
   ctx.registry.bind(groundMesh, split)
   ctx.registry.bind(gridMinor, split)
   ctx.registry.bind(gridMajor, split)
+  ctx.registry.bind(rim, split)
 
   /* ------------------------------------------------------------ theme flips */
 
@@ -802,23 +849,40 @@ export function createGround(ctx: WorldCtx): WorldModule {
  */
 function buildGrid(step: number, skip: number): THREE.BufferGeometry {
   const pts: number[] = []
+  /* The grid is paint on the platform, so it stops at the wheel's rim: each
+   * line is clipped to the chord the disc allows, then split at the pit. */
   const pushX = (z: number): void => {
+    const inside = PLAT_R * PLAT_R - (z - PLAT_CZ) * (z - PLAT_CZ)
+    if (inside <= 1) return
+    const w = Math.sqrt(inside)
     if (z > PIT_Z0 && z < PIT_Z1) {
-      pts.push(-G, 0, z, PIT_X0, 0, z, PIT_X1, 0, z, G, 0, z)
+      const a1 = Math.min(PIT_X0, w)
+      const b0 = Math.max(PIT_X1, -w)
+      if (a1 > -w) pts.push(-w, 0, z, a1, 0, z)
+      if (w > b0) pts.push(b0, 0, z, w, 0, z)
     } else {
-      pts.push(-G, 0, z, G, 0, z)
+      pts.push(-w, 0, z, w, 0, z)
     }
   }
   const pushZ = (x: number): void => {
+    const inside = PLAT_R * PLAT_R - x * x
+    if (inside <= 1) return
+    const h = Math.sqrt(inside)
+    const lo = PLAT_CZ - h
+    const hi = PLAT_CZ + h
     if (x > PIT_X0 && x < PIT_X1) {
-      pts.push(x, 0, -G, x, 0, PIT_Z0, x, 0, PIT_Z1, x, 0, G)
+      const a1 = Math.min(PIT_Z0, hi)
+      const b0 = Math.max(PIT_Z1, lo)
+      if (a1 > lo) pts.push(x, 0, lo, x, 0, a1)
+      if (hi > b0) pts.push(x, 0, b0, x, 0, hi)
     } else {
-      pts.push(x, 0, -G, x, 0, G)
+      pts.push(x, 0, lo, x, 0, hi)
     }
   }
   /* Stepped outward from the origin so the grid is symmetric about the tower
    * and the coarse grid lands on exact multiples of its own spacing. */
-  for (let v = 0; v <= G; v += step) {
+  const reach = PLAT_R + Math.abs(PLAT_CZ) + step
+  for (let v = 0; v <= reach; v += step) {
     if (skip > 0 && v % skip === 0) continue
     pushX(v)
     pushZ(v)

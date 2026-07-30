@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { KEY, load, save } from './persist'
 
 /* ============================================================================
  * Colour is semantic, never decorative.
@@ -57,6 +58,9 @@ export type ColorName = keyof typeof COLOR
 
 export type ThemeMode = 'night' | 'day'
 
+/** What the reader chose. 'system' defers to the OS and keeps following it. */
+export type ThemePref = 'system' | 'day' | 'night'
+
 type MatKind = 'matte' | 'neon' | 'glass' | 'ghost'
 
 interface CacheEntry {
@@ -81,9 +85,16 @@ interface CacheEntry {
  */
 const cache = new Map<string, CacheEntry>()
 
-/* Daylight is the default. Night is the more striking shot, but a newcomer
- * reads the architecture faster when hue and value carry meaning and nothing
- * glows; the neon city is a mode you choose, not the one you land in. */
+/*
+ * The reader's choice, and the mode it resolves to.
+ *
+ * 'system' follows the OS, because a page that ignores a reader's stated
+ * preference is a page that fights them. An explicit day or night overrides it
+ * and is remembered. Daylight remains the fallback when the OS has no opinion:
+ * a newcomer reads the architecture faster when hue and value carry meaning and
+ * nothing glows, so the neon city is a mode you land in only if you asked for it.
+ */
+let pref: ThemePref = 'system'
 let mode: ThemeMode = 'day'
 
 function applyEntry(e: CacheEntry): void {
@@ -140,6 +151,67 @@ export function setMode(next: ThemeMode): void {
 
 export function getMode(): ThemeMode {
   return mode
+}
+
+/* ---------------------------------------------------------------------------
+ * The reader's preference, and the OS behind it.
+ * -------------------------------------------------------------------------*/
+
+const DARK_QUERY = '(prefers-color-scheme: dark)'
+
+/** What the OS is asking for. Daylight when it has no opinion. */
+export function systemMode(): ThemeMode {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return 'day'
+  return window.matchMedia(DARK_QUERY).matches ? 'night' : 'day'
+}
+
+export function resolvePref(p: ThemePref): ThemeMode {
+  return p === 'system' ? systemMode() : p
+}
+
+export function getPref(): ThemePref {
+  return pref
+}
+
+/**
+ * Record the reader's choice and apply it. Persisting is the caller's business
+ * only in the sense that this module owns the key — the point is that one call
+ * both changes the city and makes the change survive a reload.
+ */
+export function setPref(next: ThemePref): ThemeMode {
+  pref = next
+  save(KEY.themePref, next)
+  const resolved = resolvePref(next)
+  setMode(resolved)
+  return resolved
+}
+
+/**
+ * Load the stored choice at boot. Returns the mode to apply. The inline script
+ * in index.html has already set `data-theme` from the same key to avoid a flash;
+ * this is the module catching up with it, not a second source of truth.
+ */
+export function initPref(): ThemeMode {
+  const stored = load<ThemePref>(KEY.themePref, 'system')
+  pref = stored === 'day' || stored === 'night' ? stored : 'system'
+  mode = resolvePref(pref)
+  for (const e of cache.values()) applyEntry(e)
+  return mode
+}
+
+/**
+ * Follow the OS while the preference is 'system'. A reader who changes their
+ * system theme mid-session expects the page to come with them.
+ */
+export function watchSystem(onChange: (m: ThemeMode) => void): () => void {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return () => {}
+  const mq = window.matchMedia(DARK_QUERY)
+  const handler = (): void => {
+    if (pref !== 'system') return
+    onChange(systemMode())
+  }
+  mq.addEventListener('change', handler)
+  return () => mq.removeEventListener('change', handler)
 }
 
 /** Matte structure. Carries no meaning by itself; it is the city's concrete. */

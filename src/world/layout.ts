@@ -357,8 +357,30 @@ export type RouteId =
   | 'nodes-to-api'
   | 'registry-to-nodes'
   | 'storage-to-nodes'
-  | 'ingress-to-nodes'
   | 'external-to-ingress'
+  | 'ingress-to-svc-web'
+  | 'ingress-to-svc-api'
+  | 'svc-web-to-nodes'
+  | 'svc-api-to-nodes'
+  | 'lb-to-svc'
+  | 'svc-lb-to-nodes'
+
+/**
+ * The Service row: one hologram slot per Service, floating above the corridor
+ * between the edge and the node grid. A ClusterIP has no location, which is why
+ * this is above the ground rather than on it — but traffic is routed *through*
+ * it, so the position has to be shared geography rather than private to the
+ * network district.
+ */
+export const SERVICE_ROW = { y: 116, z: 300, pitch: 104, slots: 6 } as const
+
+/** World position of Service slot `i`. */
+export function serviceSlotPos(i: number, out = new THREE.Vector3()): THREE.Vector3 {
+  return out.set((i - (SERVICE_ROW.slots - 1) / 2) * SERVICE_ROW.pitch, SERVICE_ROW.y, SERVICE_ROW.z)
+}
+
+/** Slot x only, for the static route tables below. */
+const svcX = (i: number): number => (i - (SERVICE_ROW.slots - 1) / 2) * SERVICE_ROW.pitch
 
 export interface RouteDef {
   id: RouteId
@@ -426,10 +448,48 @@ export const ROUTES: readonly RouteDef[] = [
     kind: 'volume',
     points: [A.storagePlant, [CITY.storage.x + 130, -20, CITY.node.z], A.nodeGrid],
   },
+  /*
+   * The real chain is LB -> Ingress -> Service -> Pods, and the Service is not
+   * scenery on the way: the Ingress rules name it, and its EndpointSlice is what
+   * decides which pods exist to receive anything. One straight line from the
+   * Ingress to the node grid skipped it entirely and passed underneath the
+   * hologram, which is why the row of Services read as decoration.
+   *
+   * The Ingress has two rules, so the traffic forks here rather than merging.
+   */
   {
-    id: 'ingress-to-nodes',
+    id: 'ingress-to-svc-web',
     kind: 'traffic',
-    points: [A.ingress, [0, 6, CITY.edge.z - 90], A.nodeGrid],
+    points: [A.ingress, [svcX(2) * 0.5, 54, CITY.edge.z - 50], [svcX(2), SERVICE_ROW.y, SERVICE_ROW.z]],
+  },
+  {
+    id: 'ingress-to-svc-api',
+    kind: 'traffic',
+    points: [A.ingress, [svcX(3) * 0.5, 54, CITY.edge.z - 50], [svcX(3), SERVICE_ROW.y, SERVICE_ROW.z]],
+  },
+  /* Down from the virtual IP into the node grid, where kube-proxy's rules on
+   * each node do the actual rewrite to a pod IP. */
+  {
+    id: 'svc-web-to-nodes',
+    kind: 'traffic',
+    points: [[svcX(2), SERVICE_ROW.y, SERVICE_ROW.z], [svcX(2) * 0.7, 58, 240], [-CITY.node.pitch / 2, 8, CITY.node.z]],
+  },
+  {
+    id: 'svc-api-to-nodes',
+    kind: 'traffic',
+    points: [[svcX(3), SERVICE_ROW.y, SERVICE_ROW.z], [svcX(3) * 0.7, 58, 240], [CITY.node.pitch / 2, 8, CITY.node.z]],
+  },
+  /* The L4 door: its own external address, its own Service, and it never touches
+   * the Ingress. Drawing both doors as one line was the other half of the lie. */
+  {
+    id: 'lb-to-svc',
+    kind: 'traffic',
+    points: [A.loadBalancer, [svcX(5) * 0.6, 60, CITY.edge.z - 30], [svcX(5), SERVICE_ROW.y, SERVICE_ROW.z]],
+  },
+  {
+    id: 'svc-lb-to-nodes',
+    kind: 'traffic',
+    points: [[svcX(5), SERVICE_ROW.y, SERVICE_ROW.z], [svcX(5) * 0.7, 58, 240], [CITY.node.pitch * 1.5, 8, CITY.node.z]],
   },
   {
     id: 'external-to-ingress',

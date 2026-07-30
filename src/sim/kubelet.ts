@@ -46,6 +46,7 @@ import {
   type PodRuntime,
   type SimCtx,
 } from './ctx'
+import { admittedRps } from './network'
 import { ensurePodVolumes, releasePodVolumes } from './storage'
 
 /* Model seconds the sandbox and CNI steps take. Real: 100 ms to a few seconds. */
@@ -85,7 +86,9 @@ function computeTrafficShares(ctx: SimCtx): void {
         break
     }
   }
-  const t = ctx.s.knobs.trafficRps
+  /* What the cluster admits, not what the knob asks for: with every door
+   * deleted no request reaches a pod, and the CPU must say so. */
+  const t = admittedRps(ctx).total
   rps['web'] = t / Math.max(1, web)
   /* A third of front-end requests reach the API tier, and a tenth the store. */
   rps['api'] = (t * 0.35) / Math.max(1, api)

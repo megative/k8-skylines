@@ -1,6 +1,6 @@
 import type { Bus } from '../core/bus'
 import type { CameraRig } from '../engine/camera'
-import { getMode, type ThemeMode } from '../core/theme'
+import { getPref, setPref, type ThemePref } from '../core/theme'
 
 /* ============================================================================
  * The view bar: theme, camera mode, and the input map, always on screen.
@@ -28,15 +28,46 @@ const ICON_SUN =
   '<circle cx="12" cy="12" r="4.2"/><g stroke="currentColor" stroke-width="1.8" stroke-linecap="round">' +
   '<path d="M12 2.4v2.6M12 19v2.6M2.4 12h2.6M19 12h2.6M5.2 5.2l1.9 1.9M16.9 16.9l1.9 1.9M18.8 5.2l-1.9 1.9M7.1 16.9l-1.9 1.9"/></g>'
 const ICON_MOON = '<path d="M20 14.6A8.6 8.6 0 0 1 9.4 4a8.6 8.6 0 1 0 10.6 10.6z"/>'
+/* Auto: one disc, half filled — the palette is not the reader's call right now. */
+const ICON_AUTO =
+  '<path d="M12 3.4a8.6 8.6 0 1 0 0 17.2 8.6 8.6 0 0 0 0-17.2zm0 1.9v13.4a6.7 6.7 0 0 1 0-13.4z"/>'
 
-function themeIcon(mode: ThemeMode): string {
-  /* Show what a click gives you, not what you already have. */
-  return `<svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true">${
-    mode === 'night' ? ICON_SUN : ICON_MOON
-  }</svg>`
+/* Three states, so the icon states the *choice*, not just the palette. Showing
+ * what a click gives you cannot work with three: the reader would have no way to
+ * tell "following the system" from "I picked this". */
+const THEME_ICON: Record<ThemePref, string> = {
+  system: ICON_AUTO,
+  day: ICON_SUN,
+  night: ICON_MOON,
+}
+
+const THEME_HINT: Record<ThemePref, string> = {
+  system: 'Theme follows your system. Click for daylight',
+  day: 'Daylight — hue and value carry the meaning. Click for night',
+  night: 'Night — matte structure, and only real signals glow. Click to follow your system',
+}
+
+const NEXT_PREF: Record<ThemePref, ThemePref> = { system: 'day', day: 'night', night: 'system' }
+
+function themeIcon(p: ThemePref): string {
+  return `<svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true">${THEME_ICON[p]}</svg>`
 }
 
 export type PanelMode = 'minimal' | 'full'
+
+/** Which representation is on screen. Both are the same cluster. */
+export type ViewMode = 'city' | 'plan'
+
+const VIEWS: Seg<ViewMode>[] = [
+  { value: 'city', label: '3D', hint: 'The city. Depth is durability, and desired state is a hologram.' },
+  { value: 'plan', label: '2D', hint: 'The same cluster flat: every district at once, no perspective.' },
+]
+
+function applyView(v: ViewMode): void {
+  document.documentElement.dataset.view = v
+  const plan = document.getElementById('plan')
+  if (plan) plan.hidden = v !== 'plan'
+}
 
 /*
  * The city is the thing worth looking at, and it was losing. Six panels opened
@@ -60,6 +91,8 @@ const KEYS: [string, string][] = [
   ['T', 'tour'],
   ['B', 'failures'],
   ['/', 'search'],
+  ['F', 'follow'],
+  ['`', 'kubectl'],
   ['?', 'all keys'],
 ]
 
@@ -115,20 +148,26 @@ export function createViewbar(bus: Bus, rig: CameraRig): Viewbar {
   const themeBtn = document.createElement('button')
   themeBtn.type = 'button'
   themeBtn.className = 'vb-icon'
-  let themeMode: ThemeMode = getMode()
+  let themePref: ThemePref = getPref()
   const paintTheme = (): void => {
-    themeBtn.innerHTML = themeIcon(themeMode)
-    const to = themeMode === 'night' ? 'daylight' : 'night'
-    themeBtn.title =
-      themeMode === 'night'
-        ? 'Switch to daylight — hue and value carry the meaning (N)'
-        : 'Switch to night — matte structure, and only real signals glow (N)'
-    themeBtn.setAttribute('aria-label', `Switch to ${to}`)
+    themeBtn.innerHTML = themeIcon(themePref)
+    themeBtn.title = THEME_HINT[themePref]
+    themeBtn.setAttribute('aria-label', `Theme: ${themePref}. Click to change`)
   }
   themeBtn.addEventListener('click', () => {
-    bus.emit('theme', { mode: themeMode === 'night' ? 'day' : 'night' })
+    /* setPref persists the choice and returns the mode it resolves to; the bus
+     * event is what actually repaints the city. */
+    themePref = NEXT_PREF[themePref]
+    bus.emit('theme', { mode: setPref(themePref) })
+    paintTheme()
   })
   paintTheme()
+
+  const view = segmented<ViewMode>('View', VIEWS, 'city', (v) => {
+    applyView(v)
+    view.set(v)
+  })
+  applyView('city')
 
   const startMode: PanelMode =
     document.documentElement.dataset.panels === 'full' ? 'full' : 'minimal'
@@ -204,11 +243,13 @@ export function createViewbar(bus: Bus, rig: CameraRig): Viewbar {
     keys.appendChild(pair)
   }
 
-  root.append(themeBtn, panels.el, model, keys)
+  root.append(themeBtn, view.el, panels.el, model, keys)
   document.body.appendChild(root)
 
-  const offTheme = bus.on('theme', ({ mode }) => {
-    themeMode = mode
+  const offTheme = bus.on('theme', () => {
+    /* Read the preference back rather than inferring it from the mode: 'system'
+     * and an explicit choice can resolve to the same palette. */
+    themePref = getPref()
     paintTheme()
   })
 

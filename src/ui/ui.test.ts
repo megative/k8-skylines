@@ -664,22 +664,22 @@ describe('createControls', () => {
     expect(seen).toEqual([])
   })
 
-  it('toggles theme on N and labels on L', () => {
+  it('toggles labels on L, and no longer binds a theme key', () => {
     const themes: string[] = []
     const overlays: { id: string; open: boolean }[] = []
     bus.on('theme', (p) => themes.push(p.mode))
     bus.on('overlay', (p) => overlays.push({ id: p.id, open: p.open }))
 
-    key('n')
-    expect(themes).toEqual(['day'])
-    html.dataset.theme = 'day'
-    key('n')
-    expect(themes).toEqual(['day', 'night'])
-
     key('l')
     expect(overlays).toContainEqual({ id: 'labels', open: false })
     key('l')
     expect(overlays).toContainEqual({ id: 'labels', open: true })
+
+    /* The theme is a click on the view bar, and only a click: a key that changed
+     * the palette without recording the choice left the stored preference and
+     * the city disagreeing after a reload. */
+    key('n')
+    expect(themes).toEqual([])
   })
 
   it('restores defaults on R, and only for knobs that moved', () => {

@@ -10,7 +10,7 @@ import './styles/viewbar.css'
 
 import { bus } from './core/bus'
 import { registry } from './core/registry'
-import { getMode, setMode } from './core/theme'
+import { getMode, initPref, setMode, watchSystem } from './core/theme'
 import { Rng } from './core/util'
 import type { Knobs, SimState } from './core/types'
 
@@ -21,6 +21,7 @@ import { createCameraRig } from './engine/camera'
 import { createFlows } from './engine/flows'
 import { createLabels } from './engine/labels'
 import { createPicker } from './engine/picker'
+import { createTrace } from './engine/trace'
 
 import type { WorldCtx, WorldModule } from './world/module'
 import { createGround } from './world/ground'
@@ -39,10 +40,14 @@ import { createHud } from './ui/hud'
 import { createControls } from './ui/controls'
 import { createPanel } from './ui/panel'
 import { createSearch } from './ui/search'
+import { createConsole } from './ui/console'
+import { createPathReader } from './ui/paths'
+import { createPlan } from './ui/plan'
 import { createHelp } from './ui/help'
 import { createTour } from './ui/tour'
 import { createViewbar } from './ui/viewbar'
 import { createScenarioBrowser } from './ui/scenarios'
+import { flowPath } from './world/paths'
 
 declare const __K8SKYLINES_VERSION__: string
 declare const __K8SKYLINES_GIT_SHA__: string
@@ -73,10 +78,15 @@ function main(): void {
     )
   }
 
-  /* index.html hard-codes the same value to avoid a flash; this keeps the DOM
-   * honest if the default in core/theme.ts ever changes and the markup lags. */
+  /* The inline script in index.html already painted from the stored preference;
+   * this is the module catching up with it, not deciding again. */
+  initPref()
   document.documentElement.dataset.theme = getMode()
   gfx.setBloom(getMode() === 'night')
+
+  /* A reader who flips their OS theme mid-session expects the page to follow —
+   * but only while they have not overridden it themselves. */
+  watchSystem((m) => bus.emit('theme', { mode: m }))
 
   const sim = createSim()
   /* One fixed seed for the whole city, so scatter is identical across reloads
@@ -125,10 +135,14 @@ function main(): void {
   const controls = createControls(bus, sim.state.knobs)
   const panel = createPanel(bus, registry)
   createSearch(bus, registry)
+  createConsole(bus, registry, sim)
   createHelp(bus)
   const tour = createTour(bus, registry)
   createViewbar(bus, rig)
   const scenarios = createScenarioBrowser(bus)
+  const trace = createTrace(gfx)
+  createPathReader(bus)
+  const plan = createPlan(bus)
 
   /* The UI never mutates the model. It emits intents; the simulation decides. */
   /*
@@ -152,6 +166,57 @@ function main(): void {
       if (sim.activeScenario !== id) sim.runScenario(id)
     } else if (sim.activeScenario) {
       sim.stopScenario()
+    }
+  })
+  /* Deletion and the whole-cluster reset that undoes it. Both are real cluster
+   * mutations, so they go to the model and nowhere else. */
+  bus.on('delete', ({ kind, namespace, name }) => {
+    if (!sim.deleteObject(kind, namespace, name)) {
+      bus.emit('toast', { text: `${kind} "${name}" not found`, kind: 'warn' })
+    }
+  })
+  bus.on('apply', ({ kind, name }) => {
+    const r = sim.applyObject(kind, name)
+    if (r === 'unknown') bus.emit('toast', { text: `no predefined ${kind} "${name}"`, kind: 'warn' })
+    else if (r === 'created') bus.emit('toast', { text: `Created ${kind}/${name}`, kind: 'info' })
+  })
+  bus.on('reset', () => {
+    sim.reset()
+    bus.emit('toast', { text: 'Cluster reset to its seed', kind: 'info' })
+  })
+  /* Following a chain: the reader picks, the scene isolates, the camera goes to
+   * the hop. The UI never touches the scene itself. */
+  const _hopAt = new THREE.Vector3()
+  /* Far enough that a hop's own signage stays signage rather than wallpaper. */
+  const HOP_DISTANCE = 330
+  const labelHost = document.getElementById('labels')
+  bus.on('trace', ({ id, hop }) => {
+    const path = id ? flowPath(id) : undefined
+    /* The scrim is in the scene and cannot dim the labels, which are DOM. They
+     * are the loudest thing left on screen, so they fade with it. */
+    labelHost?.classList.toggle('is-traced', path !== undefined)
+    if (!path) {
+      trace.show(null, 0)
+      return
+    }
+    trace.show(path, hop)
+    const h = path.hops[hop]
+    /* Prefer the hop's own Explainer, so the inspector explains what is lit. */
+    /*
+     * Frame the hop, but do not open the inspector: the step already explains
+     * this hop, and two explanations of the same thing is the clutter the whole
+     * feature exists to remove.
+     *
+     * A fixed distance, not object-fit framing. Hops range from a whole district
+     * to one small hologram, so fitting each one made the camera lurch between
+     * scales and shoved the close ones' own labels across the screen.
+     */
+    const entry = h ? registry.get(h.focus) : undefined
+    if (entry?.object) {
+      entry.object.getWorldPosition(_hopAt)
+      rig.focusPoint(_hopAt, HOP_DISTANCE)
+    } else if (trace.hopPoint(path, hop, _hopAt)) {
+      rig.focusPoint(_hopAt, HOP_DISTANCE)
     }
   })
   bus.on('theme', ({ mode }) => {
@@ -310,14 +375,16 @@ function main(): void {
 
     rig.update(dt)
     picker.update(dt)
+    trace.update(dt)
     labels.update(s, dt)
     hud.update(s, dt)
     controls.update(s)
     panel.update(s)
     tour.update(dt)
     scenarios.update(s, dt)
+    plan.update(s, dt)
 
-    gfx.render(dt)
+    if (document.documentElement.dataset.view !== 'plan') gfx.render(dt)
 
     if (firstFrame) {
       firstFrame = false
@@ -348,6 +415,11 @@ function main(): void {
       panel,
       controls,
       scenarios,
+      districts,
+      picker,
+      trace,
+      plan,
+      labels,
       THREE,
       version: typeof __K8SKYLINES_VERSION__ === 'string' ? __K8SKYLINES_VERSION__ : 'dev',
       sha: typeof __K8SKYLINES_GIT_SHA__ === 'string' ? __K8SKYLINES_GIT_SHA__ : 'unknown',

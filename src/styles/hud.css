@@ -410,27 +410,40 @@
 
 .hud-brand {
   display: flex;
-  align-items: baseline;
-  gap: 0.22em;
+  align-items: center;
+  gap: 0.4em;
   margin-right: 0.4rem;
   user-select: none;
+  /* Its own plate, matching the read-out cells, so the mark sits on ground
+     instead of floating bare against the strip. */
+  padding: 0.2rem 0.5rem 0.2rem 0.4rem;
+  border: 1px solid var(--k8-border);
+  border-radius: 7px;
+  background: var(--k8-panel);
 }
 
 .hud-brand-mark {
-  font-family: var(--k8-mono);
-  font-weight: 700;
-  font-size: 13px;
-  color: var(--k8-bg);
-  background: var(--k8-accent);
-  border-radius: 4px;
-  padding: 0 0.28em;
-  box-shadow: 0 0 16px color-mix(in srgb, var(--k8-accent) 45%, transparent);
+  display: inline-flex;
+  color: var(--k8-accent);
+  filter: drop-shadow(0 0 7px color-mix(in srgb, var(--k8-accent) 45%, transparent));
+}
+
+.hud-brand-mark svg {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+
+/* The hub disc reads as a hole punched in the wheel; fill it with the strip's
+   own background so the little skyline sits on solid ground at this size. */
+.hud-brand-mark svg {
+  --k8-mark-hub: var(--k8-bg);
 }
 
 .hud-brand-word {
   font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.22em;
+  font-weight: 700;
+  letter-spacing: 0.2em;
   color: var(--k8-dim);
 }
 

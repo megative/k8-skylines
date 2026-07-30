@@ -56,7 +56,7 @@ const KEYMAP: readonly KeySection[] = [
       { k: ['T'], d: 'Guided tour: one kubectl apply, followed the whole way' },
       { k: ['/', 'Ctrl-K', 'Cmd-K'], j: ' or ', d: 'Command palette — every component, knob and scenario' },
       { k: ['?'], d: 'This map' },
-      { k: ['L', 'N'], j: ' · ', d: 'Toggle labels · toggle day and night' },
+      { k: ['L'], d: 'Toggle labels' },
       { k: ['K', 'P'], j: ' or ', d: 'Pause and resume model time' },
       { k: [',', '.'], j: ' · ', d: 'Slower · faster' },
       { k: ['R'], d: 'Reset every knob to its default' },

@@ -53,14 +53,35 @@ the relevant `Explainer`, where the reader meets it, not in a footnote here.
 
 ## Wanted
 
-- **Delete a resource and let the cluster carry on.** A machine can be taken out
-  of the cluster and put back, but nothing else can: there is no way to delete
-  the Ingress and watch external traffic stop reaching the Services, or to
-  delete a Service and watch its rule tables disappear from every node while the
-  pods behind it keep running. Deletion is how most people first learn what an
-  object was actually doing, and its absence is the biggest gap in the failure
-  curriculum. It needs a delete path through the API pipeline, owner-reference
-  cascade in the garbage collector, and a way to put the object back.
+The city shows every mechanism at once. That is honest, and it is also the
+loudest complaint: a reader cannot tell what goes where, everything moves at the
+same time, and the plan reads as noise rather than as a system. Everything in
+this section is a different answer to that one problem.
+
+- **Isolate a flow.** Pick a causal chain — a `kubectl apply` from the door to a
+  running container, a user request from outside to a Ready pod, a Lease
+  heartbeat — and quiet the rest of the city while stepping through it hop by
+  hop. Named paths over the routes `layout.ts` already owns, so no geography is
+  duplicated. This is the foundation the two entries below stand on.
+
+- **Isolate the chains one resource takes part in.** Clicking a building should
+  be able to answer "what flows through *this*?" — show only the chains this
+  object participates in and dim everything else. The generic named paths are a
+  catalogue; this is the same isolation resolved from a selection, which is what
+  makes it useful while exploring rather than while being taught.
+
+- **A 2D view of the whole thing.** The 3D city earns depth-is-durability and
+  desired-versus-actual, and pays for it in legibility: a plan view cannot be
+  read at a glance. A flat schematic — same objects, same colours, same
+  Explainers, no perspective — would let a reader see the entire control plane
+  and data plane at once, and would serve people for whom the 3D scene is a
+  barrier rather than a help.
+
+- **An IDE-shaped view, in the spirit of Lens.** A resource tree beside a detail
+  pane: namespaces and kinds on the left, the selected object's manifest, status
+  and events on the right. The console already answers `get` and `describe`; this
+  is the same data as a browsable surface, and it is how most people actually
+  navigate a cluster.
 
 ## Known limitations
 

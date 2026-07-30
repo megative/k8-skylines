@@ -83,6 +83,36 @@ body {
   text-align: center;
 }
 
+/* The hero mark: our helm, lit like night neon. */
+.boot-mark {
+  width: clamp(96px, 15vw, 148px);
+  height: auto;
+  margin: 0 auto 1.4rem;
+  display: block;
+  color: var(--k8-boot-title, #38e8ff);
+  filter: drop-shadow(0 0 18px color-mix(in srgb, var(--k8-boot-title, #38e8ff) 40%, transparent));
+}
+
+/* The wheel turns slowly; the city in the hub must not, so only the wheel group
+   spins, about the viewBox centre. */
+.boot-mark .helm-wheel {
+  transform-box: view-box;
+  transform-origin: 50px 50px;
+  animation: boot-helm 30s linear infinite;
+}
+
+@keyframes boot-helm {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .boot-mark .helm-wheel {
+    animation: none;
+  }
+}
+
 .boot-title {
   font-size: 2rem;
   font-weight: 650;

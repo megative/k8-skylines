@@ -65,7 +65,7 @@ function emit(node: Node, indent: number, out: string[]): void {
   }
 }
 
-function yaml(root: Node): string {
+export function yaml(root: Node): string {
   const out: string[] = []
   emit(root, 0, out)
   return out.join('\n')
@@ -91,9 +91,8 @@ function interestingPod(s: SimState): PodState | undefined {
   return running ?? s.pods.values().next().value
 }
 
-function podManifest(s: SimState): string | undefined {
-  const p = interestingPod(s)
-  if (!p) return undefined
+/** The Pod object as `kubectl get pod NAME -o yaml` prints it, for one pod. */
+export function podManifestByRef(p: PodState): string {
   return yaml({
     apiVersion: 'v1',
     kind: 'Pod',
@@ -140,6 +139,12 @@ function podManifest(s: SimState): string | undefined {
       })),
     },
   })
+}
+
+function podManifest(s: SimState): string | undefined {
+  const p = interestingPod(s)
+  if (!p) return undefined
+  return podManifestByRef(p)
 }
 
 function deploymentManifest(s: SimState): string | undefined {

@@ -41,6 +41,16 @@ export interface BusEvents {
   'tour-chapter': { index: number; title: string }
   /** Tour ended or was cancelled. */
   'tour-end': Record<string, never>
+  /** Delete a cluster object by kind and name. The simulation submits it
+   *  through the API pipeline and lets garbage collection cascade. */
+  delete: { kind: string; namespace: string; name: string }
+  /** Create one of the predefined objects the model can run, by kind and name. */
+  apply: { kind: string; name: string }
+  /** Isolate one causal chain and step through it. `id` null releases the city. */
+  trace: { id: string | null; hop: number }
+  /** Re-seed the whole cluster: the only way to bring deleted objects back,
+   *  since this model has no `kubectl apply` yet. */
+  reset: Record<string, never>
   /** Overlay visibility, so the camera can release pointer lock. */
   overlay: { id: string; open: boolean }
   /** Something the user should read once, e.g. a rejected write. */

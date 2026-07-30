@@ -1,6 +1,6 @@
 import type { Bus } from '../core/bus'
 import type { Registry } from '../core/registry'
-import { COLOR } from '../core/theme'
+import { COLOR, setPref } from '../core/theme'
 import type { DistrictId, Knobs } from '../core/types'
 import { formatCpu, formatMem } from '../core/util'
 import { SCENARIOS } from '../sim/scenarios'
@@ -282,6 +282,24 @@ export function createSearch(bus: Bus, registry: Registry): Search {
     },
     {
       kind: 'action',
+      label: 'Follow a flow',
+      sub: 'Isolate one causal chain and step through it while the rest of the city dims.',
+      tag: 'F',
+      terms: 'follow flow path trace chain isolate step how does it work',
+      accent: COLOR.ready,
+      run: () => bus.emit('overlay', { id: 'paths', open: true }),
+    },
+    {
+      kind: 'action',
+      label: 'kubectl console',
+      sub: 'A terminal that runs kubectl against the modelled cluster. get, describe, explain, scale.',
+      tag: '`',
+      terms: 'kubectl console terminal cli shell get describe explain command',
+      accent: COLOR.api,
+      run: () => bus.emit('overlay', { id: 'console', open: true }),
+    },
+    {
+      kind: 'action',
       label: 'Keyboard map and colour legend',
       sub: 'Every input, and what every colour in the city means.',
       tag: '?',
@@ -293,19 +311,28 @@ export function createSearch(bus: Bus, registry: Registry): Search {
       kind: 'action',
       label: 'Night mode',
       sub: 'Structure goes matte and meaning glows.',
-      tag: 'N',
+      tag: 'theme',
       terms: 'night dark theme mode',
       accent: COLOR.etcd,
-      run: () => bus.emit('theme', { mode: 'night' }),
+      run: () => bus.emit('theme', { mode: setPref('night') }),
     },
     {
       kind: 'action',
       label: 'Day mode',
       sub: 'Hue and value carry meaning without bloom.',
-      tag: 'N',
+      tag: 'theme',
       terms: 'day light theme mode',
       accent: COLOR.ingress,
-      run: () => bus.emit('theme', { mode: 'day' }),
+      run: () => bus.emit('theme', { mode: setPref('day') }),
+    },
+    {
+      kind: 'action',
+      label: 'Reset cluster',
+      sub: 'Re-seed everything. The only way to bring back a deleted Ingress, Service or Deployment.',
+      tag: 'reset',
+      terms: 'reset cluster reseed restore undo delete apply bring back',
+      accent: COLOR.ready,
+      run: () => bus.emit('reset', {}),
     },
     {
       kind: 'action',
@@ -515,7 +542,7 @@ export function createSearch(bus: Bus, registry: Registry): Search {
 
   /* Two modals on screen at once is a lost keyboard. */
   const offOther = bus.on('overlay', (p) => {
-    if (p.open && (p.id === 'help' || p.id === 'tour')) setOpen(false)
+    if (p.open && (p.id === 'help' || p.id === 'tour' || p.id === 'console' || p.id === 'paths')) setOpen(false)
   })
 
   return {

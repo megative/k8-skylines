@@ -1,6 +1,4 @@
 <!doctype html>
-<!-- data-theme is set here, not by script, so the page never flashes the dark
-     palette before main.ts runs. It must agree with the default in core/theme.ts. -->
 <html lang="en" data-theme="day" data-panels="minimal">
   <head>
     <meta charset="utf-8" />
@@ -11,6 +9,27 @@
       content="An explorable 3D city that shows how Kubernetes actually works: the API server pipeline, etcd's raft log, the scheduler, reconcile loops, kubelet, CNI, CSI and the pods themselves."
     />
     <meta name="color-scheme" content="light dark" />
+    <!--
+      Resolve the theme before the first paint, or the page flashes the wrong
+      palette while the bundle loads. Reads the same localStorage key and the
+      same OS query core/theme.ts uses; that module catches up on boot rather
+      than deciding again. Inline and tiny on purpose: a deferred module cannot
+      run early enough to prevent the flash.
+    -->
+    <script>
+      (function () {
+        try {
+          var raw = localStorage.getItem('k8skylines.theme')
+          var pref = raw ? JSON.parse(raw) : 'system'
+          if (pref !== 'day' && pref !== 'night') {
+            pref = matchMedia('(prefers-color-scheme: dark)').matches ? 'night' : 'day'
+          }
+          document.documentElement.dataset.theme = pref
+        } catch (e) {
+          /* No storage, or a corrupt value: daylight, already in the markup. */
+        }
+      })()
+    </script>
     <link rel="icon" href="./public/favicon.svg" type="image/svg+xml" />
   </head>
   <body>
@@ -20,6 +39,25 @@
     <!-- Boot / WebGL failure message, replaced once the scene is live. -->
     <div id="boot" role="status">
       <div class="boot-inner">
+        <!-- The mark: our own ship's helm (Kubernetes = the helmsman), with the
+             city's ghost-tower skyline in its hub. Not the Kubernetes logo. -->
+        <svg class="boot-mark" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="none" aria-label="K8Skylines">
+          <g class="helm-wheel" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="50" cy="50" r="34" />
+            <g transform="rotate(0 50 50)"><line x1="50" y1="37.5" x2="50" y2="9" /><circle cx="50" cy="8" r="2.6" fill="currentColor" stroke="none" /></g>
+            <g transform="rotate(51.43 50 50)"><line x1="50" y1="37.5" x2="50" y2="9" /><circle cx="50" cy="8" r="2.6" fill="currentColor" stroke="none" /></g>
+            <g transform="rotate(102.86 50 50)"><line x1="50" y1="37.5" x2="50" y2="9" /><circle cx="50" cy="8" r="2.6" fill="currentColor" stroke="none" /></g>
+            <g transform="rotate(154.29 50 50)"><line x1="50" y1="37.5" x2="50" y2="9" /><circle cx="50" cy="8" r="2.6" fill="currentColor" stroke="none" /></g>
+            <g transform="rotate(205.71 50 50)"><line x1="50" y1="37.5" x2="50" y2="9" /><circle cx="50" cy="8" r="2.6" fill="currentColor" stroke="none" /></g>
+            <g transform="rotate(257.14 50 50)"><line x1="50" y1="37.5" x2="50" y2="9" /><circle cx="50" cy="8" r="2.6" fill="currentColor" stroke="none" /></g>
+            <g transform="rotate(308.57 50 50)"><line x1="50" y1="37.5" x2="50" y2="9" /><circle cx="50" cy="8" r="2.6" fill="currentColor" stroke="none" /></g>
+          </g>
+          <circle cx="50" cy="50" r="13.5" fill="var(--k8-mark-hub, #0b1018)" stroke="currentColor" stroke-width="2" />
+          <rect x="43.4" y="52" width="3.1" height="6.4" rx="0.6" fill="currentColor" />
+          <rect x="47.7" y="49" width="3.1" height="9.4" rx="0.6" fill="currentColor" />
+          <rect x="52" y="46.4" width="3.1" height="12" rx="0.6" fill="none" stroke="#38e8ff" stroke-width="1.5" stroke-dasharray="2 1.6" />
+          <rect x="43" y="59.2" width="12.1" height="1.9" rx="0.7" fill="#9d6cff" />
+        </svg>
         <div class="boot-title">K8Skylines</div>
         <div class="boot-tag">A working model of the Kubernetes control plane</div>
         <div class="boot-bar"><i class="boot-bar-fill" id="boot-bar"></i></div>
@@ -50,6 +88,10 @@
     <section id="search" class="overlay" hidden></section>
     <section id="help" class="overlay" hidden></section>
     <section id="tour" class="overlay" hidden></section>
+    <section id="console" class="overlay" hidden></section>
+    <section id="paths" class="overlay" hidden></section>
+    <!-- The flat plan: the same cluster without perspective. -->
+    <section id="plan" hidden></section>
     <div id="context-menu" hidden></div>
     <div id="toasts" role="log" aria-live="polite"></div>
 
