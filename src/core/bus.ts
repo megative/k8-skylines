@@ -48,6 +48,12 @@ export interface BusEvents {
   apply: { kind: string; name: string }
   /** Isolate one causal chain and step through it. `id` null releases the city. */
   trace: { id: string | null; hop: number }
+  /**
+   * Select one concrete object, not a mechanism. `focus` answers "what is a
+   * Pod"; this answers "what is *this* pod", which is what a resource tree has
+   * to be able to say. An empty `name` clears the selection.
+   */
+  inspect: { kind: string; namespace: string; name: string }
   /** Re-seed the whole cluster: the only way to bring deleted objects back,
    *  since this model has no `kubectl apply` yet. */
   reset: Record<string, never>

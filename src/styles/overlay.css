@@ -1203,3 +1203,341 @@ code.tour-code {
 .pl-wire-dash {
   stroke-dasharray: 4 3;
 }
+
+/* ========================================================== the resource tree
+
+   An IDE shape: a filterable tree on the left, one object on the right. Covers
+   the canvas like the flat plan does — three representations competing for the
+   same screen would make all three worse. */
+
+#tree {
+  position: fixed;
+  inset: 2.6rem 0 4.6rem;
+  background: var(--k8-bg);
+  z-index: 5;
+}
+
+#tree[hidden] {
+  display: none;
+}
+
+:root[data-view='tree'] #labels {
+  display: none;
+}
+
+.tr-wrap {
+  display: grid;
+  grid-template-columns: minmax(15rem, 22rem) 1fr;
+  height: 100%;
+  min-height: 0;
+}
+
+.tr-side {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--k8-border);
+}
+
+.tr-search {
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--k8-border);
+}
+
+.tr-input {
+  width: 100%;
+  appearance: none;
+  border: 1px solid var(--k8-border);
+  border-radius: 7px;
+  background: var(--k8-panel);
+  color: var(--k8-text);
+  font: 400 0.78rem/1.4 var(--k8-sans, system-ui, sans-serif);
+  padding: 0.35rem 0.5rem;
+  outline: none;
+}
+
+.tr-input:focus-visible {
+  border-color: color-mix(in srgb, var(--k8-accent) 60%, transparent);
+}
+
+.tr-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.35rem 0.4rem 1rem;
+}
+
+.tr-ns + .tr-ns {
+  margin-top: 0.7rem;
+}
+
+.tr-ns-t {
+  padding: 0.3rem 0.45rem 0.2rem;
+  font-size: 0.5938rem;
+  font-weight: 650;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--k8-dim);
+}
+
+.tr-kind {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--k8-text);
+  text-align: left;
+  font: 550 0.7188rem/1 var(--k8-sans, system-ui, sans-serif);
+  padding: 0.3rem 0.45rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.tr-kind:hover {
+  background: color-mix(in srgb, var(--k8-text) 7%, transparent);
+}
+
+.tr-caret {
+  width: 0.7rem;
+  color: var(--k8-dim);
+  font-size: 0.6rem;
+}
+
+.tr-kind-t {
+  flex: 1;
+}
+
+.tr-count {
+  font-family: var(--k8-mono, ui-monospace, Menlo, monospace);
+  font-size: 0.625rem;
+  color: var(--k8-dim);
+}
+
+.tr-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  appearance: none;
+  border: 0;
+  border-left: 2px solid transparent;
+  background: transparent;
+  color: var(--k8-text);
+  text-align: left;
+  font: 400 0.7188rem/1.3 var(--k8-sans, system-ui, sans-serif);
+  padding: 0.26rem 0.45rem 0.26rem 1.55rem;
+  cursor: pointer;
+}
+
+.tr-item:hover {
+  background: color-mix(in srgb, var(--k8-text) 6%, transparent);
+}
+
+.tr-item.is-on {
+  border-left-color: var(--k8-accent);
+  background: color-mix(in srgb, var(--k8-accent) 14%, transparent);
+}
+
+.tr-item-t {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--k8-mono, ui-monospace, Menlo, monospace);
+  font-size: 0.6875rem;
+}
+
+/* Status carries health, and the words are the ones kubectl prints. */
+.tr-item-s {
+  flex: none;
+  font-family: var(--k8-mono, ui-monospace, Menlo, monospace);
+  font-size: 0.5938rem;
+  color: var(--k8-dim);
+}
+
+.tr-item-s.is-ok {
+  color: var(--k8-ready);
+}
+
+.tr-item-s.is-warn {
+  color: var(--k8-pending, #ffc14d);
+}
+
+.tr-item-s.is-bad {
+  color: var(--k8-failed);
+}
+
+/* ------------------------------------------------------------ detail pane */
+
+.tr-detail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.tr-dhead {
+  display: flex;
+  align-items: baseline;
+  gap: 0.55rem;
+  padding: 0.8rem 1.1rem 0.6rem;
+  border-bottom: 1px solid var(--k8-border);
+}
+
+.tr-dkind {
+  font-size: 0.5938rem;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--k8-accent);
+}
+
+.tr-dname {
+  margin: 0;
+  font-family: var(--k8-mono, ui-monospace, Menlo, monospace);
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.tr-dns {
+  margin-left: auto;
+  font-size: 0.6875rem;
+  color: var(--k8-dim);
+}
+
+.tr-dbody {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.6rem 1.1rem 2rem;
+}
+
+.tr-sec {
+  margin: 1.1rem 0 0.45rem;
+  font-size: 0.5938rem;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--k8-dim);
+}
+
+.tr-dbody > .tr-sec:first-child {
+  margin-top: 0.2rem;
+}
+
+.tr-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.tr-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.28rem 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--k8-border) 55%, transparent);
+  font-size: 0.75rem;
+}
+
+.tr-k {
+  flex: none;
+  width: 9rem;
+  color: var(--k8-dim);
+}
+
+.tr-v {
+  font-family: var(--k8-mono, ui-monospace, Menlo, monospace);
+  font-size: 0.7188rem;
+}
+
+.tr-prose {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.55;
+  color: color-mix(in srgb, var(--k8-text) 86%, transparent);
+}
+
+.tr-doc {
+  display: inline-block;
+  margin-top: 0.4rem;
+  font-size: 0.6875rem;
+  color: var(--k8-accent);
+}
+
+.tr-yaml {
+  margin: 0;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--k8-border);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--k8-text) 4%, transparent);
+  font-family: var(--k8-mono, ui-monospace, Menlo, monospace);
+  font-size: 0.6563rem;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.tr-evs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.tr-ev {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.6875rem;
+}
+
+.tr-ev-r {
+  flex: none;
+  width: 9rem;
+  font-family: var(--k8-mono, ui-monospace, Menlo, monospace);
+  font-size: 0.625rem;
+  color: var(--k8-ready);
+}
+
+.tr-ev.is-warn .tr-ev-r {
+  color: var(--k8-failed);
+}
+
+.tr-ev-m {
+  flex: 1;
+  color: color-mix(in srgb, var(--k8-text) 80%, transparent);
+}
+
+.tr-ev-c {
+  flex: none;
+  font-family: var(--k8-mono, ui-monospace, Menlo, monospace);
+  font-size: 0.5938rem;
+  color: var(--k8-dim);
+}
+
+.tr-hint,
+.tr-empty,
+.tr-gone {
+  margin: 0;
+  font-size: 0.7188rem;
+  line-height: 1.5;
+  color: var(--k8-dim);
+}
+
+.tr-gone {
+  color: var(--k8-failed);
+}
+
+@media (max-width: 52rem) {
+  .tr-wrap {
+    grid-template-columns: 1fr;
+    grid-template-rows: 40% 1fr;
+  }
+
+  .tr-side {
+    border-right: 0;
+    border-bottom: 1px solid var(--k8-border);
+  }
+}

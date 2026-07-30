@@ -55,33 +55,36 @@ the relevant `Explainer`, where the reader meets it, not in a footnote here.
 
 The city shows every mechanism at once. That is honest, and it is also the
 loudest complaint: a reader cannot tell what goes where, everything moves at the
-same time, and the plan reads as noise rather than as a system. Everything in
-this section is a different answer to that one problem.
+same time, and the plan reads as noise rather than as a system. There are now
+three representations of the same cluster — the city, a flat plan, and a resource
+tree — and what is left is making them agree and making a selection answer the
+question a reader actually has.
 
-- **Isolate a flow.** Pick a causal chain — a `kubectl apply` from the door to a
-  running container, a user request from outside to a Ready pod, a Lease
-  heartbeat — and quiet the rest of the city while stepping through it hop by
-  hop. Named paths over the routes `layout.ts` already owns, so no geography is
-  duplicated. This is the foundation the two entries below stand on.
+- **One selection across all three views.** The tree selects a concrete object
+  and emits `inspect`; the 3D picker and the flat plan still emit `focus`, which
+  names a *mechanism* — "what is a Pod" rather than "what is this pod". So
+  picking a pod in the tree does not move the city, and picking a building does
+  not move the tree. Every surface should emit both, and every surface should
+  follow both. Until then the three views can disagree about what is selected,
+  which is the same class of bug the theme had before it was persisted properly.
+
+- **A per-object manifest for every kind.** `manifest.ts` builds YAML per
+  instance for Pods and a representative object for everything else, so the tree
+  is honest but incomplete: for a Service it says it cannot show this object's
+  manifest rather than showing a different Service's. Builders taking a reference
+  would close it.
 
 - **Isolate the chains one resource takes part in.** Clicking a building should
-  be able to answer "what flows through *this*?" — show only the chains this
-  object participates in and dim everything else. The generic named paths are a
-  catalogue; this is the same isolation resolved from a selection, which is what
-  makes it useful while exploring rather than while being taught.
+  answer "what flows through *this*?" — show only the chains this object appears
+  in and dim the rest. The named paths are a catalogue and the isolation machinery
+  exists; this resolves it from a selection instead, which is what makes it useful
+  while exploring rather than while being taught.
 
-- **A 2D view of the whole thing.** The 3D city earns depth-is-durability and
-  desired-versus-actual, and pays for it in legibility: a plan view cannot be
-  read at a glance. A flat schematic — same objects, same colours, same
-  Explainers, no perspective — would let a reader see the entire control plane
-  and data plane at once, and would serve people for whom the 3D scene is a
-  barrier rather than a help.
-
-- **An IDE-shaped view, in the spirit of Lens.** A resource tree beside a detail
-  pane: namespaces and kinds on the left, the selected object's manifest, status
-  and events on the right. The console already answers `get` and `describe`; this
-  is the same data as a browsable surface, and it is how most people actually
-  navigate a cluster.
+- **Show the strands on demand, not always.** Every Service is wired to every
+  node's kube-proxy cabinet, which is up to 180 lines across the city at all
+  times, including Services that have nothing to do with what is being looked at.
+  The claim is right — one virtual IP, rules on every node — but drawn all at
+  once it reads as noise. It should follow the selection.
 
 ## Known limitations
 

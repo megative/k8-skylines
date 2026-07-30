@@ -59,13 +59,18 @@ export const DEFAULT_NAMESPACE = 'shop'
  * same ids the rest of the app already uses.
  * -------------------------------------------------------------------------*/
 
-interface Row {
+export interface Row {
   name: string
   namespace: string
   cells: string[]
 }
 
-interface Kind {
+/*
+ * Exported deliberately. The tree view lists the same kinds with the same
+ * columns, and a second copy of this table is exactly how a listing and a
+ * console start disagreeing about what the cluster contains. One owner.
+ */
+export interface Kind {
   /** Accepted tokens, canonical (plural) first, then singular and aliases. */
   names: string[]
   title: string
@@ -133,7 +138,7 @@ function nodeStatus(n: SimState['nodes'][number]): string {
   return n.unschedulable ? `${ready},SchedulingDisabled` : ready
 }
 
-const KINDS: readonly Kind[] = [
+export const KINDS: readonly Kind[] = [
   {
     names: ['pods', 'pod', 'po'],
     title: 'Pod',
@@ -393,6 +398,10 @@ function namespaces(s: SimState): string[] {
   set.add('default')
   set.add('kube-system')
   return [...set].sort()
+}
+
+export function kindById(id: string): Kind | undefined {
+  return KINDS.find((k) => k.id === id)
 }
 
 function findKind(token: string): Kind | undefined {

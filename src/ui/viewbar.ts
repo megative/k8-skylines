@@ -56,17 +56,20 @@ function themeIcon(p: ThemePref): string {
 export type PanelMode = 'minimal' | 'full'
 
 /** Which representation is on screen. Both are the same cluster. */
-export type ViewMode = 'city' | 'plan'
+export type ViewMode = 'city' | 'plan' | 'tree'
 
 const VIEWS: Seg<ViewMode>[] = [
   { value: 'city', label: '3D', hint: 'The city. Depth is durability, and desired state is a hologram.' },
   { value: 'plan', label: '2D', hint: 'The same cluster flat: every district at once, no perspective.' },
+  { value: 'tree', label: 'Tree', hint: 'The cluster as a browsable list: namespaces, kinds, and one object at a time.' },
 ]
 
 function applyView(v: ViewMode): void {
   document.documentElement.dataset.view = v
   const plan = document.getElementById('plan')
   if (plan) plan.hidden = v !== 'plan'
+  const tree = document.getElementById('tree')
+  if (tree) tree.hidden = v !== 'tree'
 }
 
 /*

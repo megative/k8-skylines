@@ -43,6 +43,7 @@ import { createSearch } from './ui/search'
 import { createConsole } from './ui/console'
 import { createPathReader } from './ui/paths'
 import { createPlan } from './ui/plan'
+import { createTree } from './ui/tree'
 import { createHelp } from './ui/help'
 import { createTour } from './ui/tour'
 import { createViewbar } from './ui/viewbar'
@@ -143,6 +144,7 @@ function main(): void {
   const trace = createTrace(gfx)
   createPathReader(bus)
   const plan = createPlan(bus)
+  const tree = createTree(bus, registry)
 
   /* The UI never mutates the model. It emits intents; the simulation decides. */
   /*
@@ -383,8 +385,9 @@ function main(): void {
     tour.update(dt)
     scenarios.update(s, dt)
     plan.update(s, dt)
+    tree.update(s, dt)
 
-    if (document.documentElement.dataset.view !== 'plan') gfx.render(dt)
+    if (document.documentElement.dataset.view === 'city') gfx.render(dt)
 
     if (firstFrame) {
       firstFrame = false
@@ -419,6 +422,7 @@ function main(): void {
       picker,
       trace,
       plan,
+      tree,
       labels,
       THREE,
       version: typeof __K8SKYLINES_VERSION__ === 'string' ? __K8SKYLINES_VERSION__ : 'dev',
