@@ -83,10 +83,13 @@ describe('controller yard', () => {
       'controllers.leader-election',
       'controllers.write-back',
       'controllers.manager',
+      /* The frame around the yard: one binary, not a row of services. Drawn
+       * structure still needs an Explainer, or it is decoration. */
+      'controllers.process',
     ]) {
       expect(c.registry.get(id), id).toBeDefined()
     }
-    expect(c.registry.district('controllers').length).toBe(CONTROLLER_ORDER.length + 8)
+    expect(c.registry.district('controllers').length).toBe(CONTROLLER_ORDER.length + 9)
   })
 
   it('keeps turning while every loop is idle: level-triggered, not edge-triggered', () => {

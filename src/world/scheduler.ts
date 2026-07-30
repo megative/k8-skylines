@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { ANCHOR, CITY, DISTRICTS, route, routeCurve } from './layout'
+import { buildHall } from './hall'
 import type { WorldCtx, WorldModule } from './module'
 import { COLOR, ghost, mat, neon, structural } from '../core/theme'
 import { N_NODES } from '../core/types'
@@ -772,6 +773,37 @@ export function createScheduler(ctx: WorldCtx): WorldModule {
 
   const reg = ctx.registry
 
+  /*
+   * The process boundary. kube-scheduler is one binary, and an open yard of
+   * furniture reads as several separate machines standing near each other.
+   */
+  const processHall = buildHall({
+    center: ANCHOR.scheduler,
+    hx: 106,
+    hz: 104,
+    baseY: CITY.mesa.top,
+    height: 76,
+    bays: 2,
+  })
+  group.add(processHall.group)
+  reg.register({
+    id: 'scheduler.process',
+    title: 'One scheduler process',
+    district: 'scheduler',
+    kubeName: 'kube-scheduler',
+    object: processHall.group,
+    summary: 'The frame is the process boundary: everything standing inside it is one binary, not a row of machines.',
+    detail: [
+      'kube-scheduler is a single process. The queues, the filter gates and the scoring lanes drawn inside this frame are stages of one scheduling cycle running in it, not separate services that could be deployed apart.',
+      'It holds a watch on the apiserver for pods with no spec.nodeName, and its only write is the binding. It never contacts a kubelet.',
+      'Only one scheduler is active at a time. A highly available control plane runs several replicas, and they hold a Lease so that exactly one of them is doing the work.',
+    ],
+    caveats: [
+      'The frame is drawn structure and has no counterpart in the API: no object describes the process boundary. It is here because an open yard implied several machines where there is one.',
+      'One scheduling profile and one queue sort are modelled. The real scheduling framework has far more extension points than are drawn.',
+    ],
+  })
+
   const eScheduler = reg.register({
     id: 'scheduler',
     title: 'Scheduler',
@@ -1347,6 +1379,7 @@ export function createScheduler(ctx: WorldCtx): WorldModule {
      * materials and the unit geometries are shared and must survive. */
     for (const l of labels) l.dispose()
     labels.length = 0
+    processHall.dispose()
   }
 
   return { group, update, dispose }

@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import type { ControllerId, NodeState, ReconcilePhase, SimState } from '../core/types'
 import { COLOR, ghost, glass, mat, neon, structural } from '../core/theme'
 import { ANCHOR, CITY, CONTROLLER_ORDER, controllerPos, route } from './layout'
+import { buildHall } from './hall'
 import type { WorldCtx, WorldModule } from './module'
 import { clamp, smoothstep } from '../core/util'
 
@@ -945,6 +946,38 @@ export function createControllers(ctx: WorldCtx): WorldModule {
 
   /* ---- explainers ---- */
   const reg = ctx.registry
+  /*
+   * The process boundary. kube-controller-manager is one binary running many
+   * loops; a yard of separate podiums read as separate services.
+   */
+  const processHall = buildHall({
+    center: ANCHOR.controllerYard,
+    hx: 106,
+    hz: 104,
+    baseY: CITY.mesa.top,
+    height: 76,
+    bays: 2,
+  })
+  group.add(processHall.group)
+  reg.register({
+    id: 'controllers.process',
+    title: 'One controller-manager process',
+    district: 'controllers',
+    kubeName: 'kube-controller-manager',
+    object: processHall.group,
+    summary: 'The frame is the process boundary: every loop inside it runs in one binary, sharing one informer cache.',
+    detail: [
+      'kube-controller-manager is a single process that runs dozens of controllers as goroutines. The Deployment, ReplicaSet, node, endpoint and garbage collection loops drawn inside this frame are not separate deployments; they start and stop together.',
+      'They share one set of informers, which is why a controller reacts to a watch event rather than polling, and why a slow apiserver slows all of them at once.',
+      'Each loop is level-triggered: it compares desired against actual and acts on the difference, so a missed event costs latency rather than correctness.',
+      'Replicas run for availability, and a Lease elects exactly one active manager.',
+    ],
+    caveats: [
+      'The frame is drawn structure with no counterpart in the API: no object describes a process boundary. It is here because separate podiums implied separate services where there is one binary.',
+      'Only a few of the real controllers are drawn, and the cloud-controller-manager, which runs the cloud-specific loops in its own process, is not.',
+    ],
+  })
+
   const eLoop = reg.register({
     id: 'controllers.reconcile-loop',
     title: 'Reconciliation',
@@ -1417,6 +1450,7 @@ export function createControllers(ctx: WorldCtx): WorldModule {
 
   function dispose(): void {
     offTheme()
+    processHall.dispose()
     for (let i = 0; i < geos.length; i++) geos[i].dispose()
     for (let i = 0; i < plates.length; i++) plates[i].dispose()
     watchMat.dispose()
