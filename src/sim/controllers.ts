@@ -50,14 +50,11 @@ import {
   setCondition,
   toleratesTaint,
   removePod,
+  TAINT_NOT_READY,
+  TAINT_UNREACHABLE,
 } from './ctx'
 import { flushUnschedulable } from './scheduling'
 import { findPvc, reclaim, reconcileClaim } from './storage'
-
-/* The taints the node controller applies. These strings are load-bearing:
- * a DaemonSet stays put through them only because it tolerates them. */
-const TAINT_UNREACHABLE = 'node.kubernetes.io/unreachable'
-const TAINT_NOT_READY = 'node.kubernetes.io/not-ready'
 
 /** Informer resync period. Real default is 10 hours; scaled to stay visible. */
 const RESYNC_SECONDS = 12

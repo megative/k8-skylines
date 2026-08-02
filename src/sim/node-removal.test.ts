@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { TIMING } from '../core/types'
 import { drainNode } from './controllers'
+import { toleratesTaint } from './ctx'
 import { createSim, simContext } from './model'
 
 /*
@@ -162,5 +163,44 @@ describe('removing a machine from the cluster', () => {
     const left = [...sim.state.pods.values()].filter((p) => p.nodeName === 'node-1')
     expect(left.map((p) => p.name)).not.toEqual([])
     for (const p of left) expect(p.owner?.kind).toBe('DaemonSet')
+  })
+
+  /*
+   * And it stays for the right reason. The DaemonSet controller writes the two
+   * NoExecute tolerations onto every pod it creates — that is what keeps a node
+   * agent in place on a machine nobody can reach — so they have to be on the
+   * object, not implied by a helper that stops reading after the key.
+   */
+  it('keeps the node agent through NoExecute because it carries that toleration', () => {
+    const sim = createSim(0x9a16)
+    const ds = sim.state.daemonSets[0]
+    expect(ds).toBeDefined()
+    const noExecute = ds.tolerations.filter((t) => t.effect === 'NoExecute').map((t) => t.key)
+    expect(noExecute).toContain('node.kubernetes.io/unreachable')
+    expect(noExecute).toContain('node.kubernetes.io/not-ready')
+  })
+})
+
+/*
+ * A toleration names a key *and* an effect, and both have to match. A blanket
+ * toleration — empty key, meaning any key — still only excuses the effect it
+ * was written for: "you may not refuse to schedule me" is not "you may not
+ * evict me", and those are the two halves of the taint mechanism this project
+ * exists to keep apart.
+ */
+describe('tolerating a taint', () => {
+  const blanketNoSchedule = [{ key: '', effect: 'NoSchedule' as const }]
+
+  it('does not let a NoSchedule toleration excuse a NoExecute taint', () => {
+    expect(toleratesTaint(blanketNoSchedule, { key: 'workload', effect: 'NoSchedule' })).toBe(true)
+    expect(toleratesTaint(blanketNoSchedule, { key: 'workload', effect: 'NoExecute' })).toBe(false)
+  })
+
+  it('matches an empty key against any key, and a named key against only its own', () => {
+    expect(toleratesTaint(blanketNoSchedule, { key: 'anything-at-all', effect: 'NoSchedule' })).toBe(true)
+    const named = [{ key: 'workload', value: 'batch', effect: 'NoSchedule' as const }]
+    expect(toleratesTaint(named, { key: 'workload', value: 'batch', effect: 'NoSchedule' })).toBe(true)
+    expect(toleratesTaint(named, { key: 'workload', value: 'stream', effect: 'NoSchedule' })).toBe(false)
+    expect(toleratesTaint(named, { key: 'other', value: 'batch', effect: 'NoSchedule' })).toBe(false)
   })
 })

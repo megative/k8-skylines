@@ -963,16 +963,34 @@ export const NODE_POD_CAPACITY = POD_SLOTS_PER_NODE
  * key, which tolerates every taint — how DaemonSets stay on dying nodes.
  * -------------------------------------------------------------------------*/
 
+/**
+ * A toleration excuses one taint only when the key *and* the effect match.
+ *
+ * An empty key means "any key" — the API spells this `operator: Exists` with no
+ * key — but it says nothing about the effect. That is the distinction the whole
+ * mechanism rests on: a toleration written for `NoSchedule` says "you may not
+ * refuse to schedule me", never "you may not evict me". This used to return
+ * true on an empty key before it read the effect at all, which quietly turned
+ * every blanket toleration into immunity from eviction.
+ *
+ * Not modelled: `operator` (an undefined `value` stands in for `Exists`), an
+ * empty `effect` as a match-all, and `tolerationSeconds`. Eviction timing is
+ * the node controller's single grace period here, not per-toleration.
+ */
 export function toleratesTaint(tolerations: readonly Taint[], taint: Taint): boolean {
   for (const t of tolerations) {
-    if (t.key === '') return true
-    if (t.key !== taint.key) continue
+    if (t.key !== '' && t.key !== taint.key) continue
     if (t.value !== undefined && t.value !== taint.value) continue
     if (t.effect !== taint.effect) continue
     return true
   }
   return false
 }
+
+/* The taints the node controller writes when a kubelet stops reporting. One
+ * owner: the seed hands the DaemonSet tolerations for these exact keys. */
+export const TAINT_UNREACHABLE = 'node.kubernetes.io/unreachable'
+export const TAINT_NOT_READY = 'node.kubernetes.io/not-ready'
 
 export function clampKnobs(k: Knobs): void {
   k.replicas = clamp(Math.round(k.replicas), 0, N_NODES * POD_SLOTS_PER_NODE)

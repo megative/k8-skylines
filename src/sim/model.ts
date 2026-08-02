@@ -31,6 +31,7 @@ import {
   type Knobs,
   type NodeState,
   type SimState,
+  type Taint,
 } from '../core/types'
 import { bus } from '../core/bus'
 import { Rng, clusterIp } from '../core/util'
@@ -42,6 +43,8 @@ import {
   emit,
   key,
   podIsTerminating,
+  TAINT_NOT_READY,
+  TAINT_UNREACHABLE,
   type ContainerSpec,
   type DeploySpec,
   type SimCtx,
@@ -283,6 +286,24 @@ function makeControllers(): Record<ControllerId, ControllerState> {
   return out
 }
 
+/*
+ * What the DaemonSet controller writes onto every pod it creates, not what an
+ * author typed. The two NoExecute entries are why a node agent is never evicted
+ * from a machine nobody can reach: it is supposed to keep reporting for as long
+ * as the Node object exists. Real Kubernetes adds them without
+ * `tolerationSeconds`, which this model has no concept of — see
+ * `toleratesTaint`.
+ *
+ * One owner. The roster in `daemonSets` and the pod template in `deploySpecs`
+ * are two views of the same DaemonSet, and when they each carried their own
+ * copy the eviction path read one while the scheduling path read the other.
+ */
+const DAEMONSET_TOLERATIONS: readonly Taint[] = [
+  { key: '', effect: 'NoSchedule' },
+  { key: TAINT_NOT_READY, effect: 'NoExecute' },
+  { key: TAINT_UNREACHABLE, effect: 'NoExecute' },
+]
+
 export function createState(): SimState {
   const knobs: Knobs = { ...DEFAULT_KNOBS }
   const nodes: NodeState[] = []
@@ -419,7 +440,7 @@ export function createState(): SimState {
         desiredScheduled: 0,
         currentScheduled: 0,
         ready: 0,
-        tolerations: [{ key: '', effect: 'NoSchedule' }],
+        tolerations: [...DAEMONSET_TOLERATIONS],
       },
     ],
     jobs: [
@@ -671,7 +692,7 @@ function installSpecs(ctx: SimCtx): void {
         hasLivenessProbe: false,
       }),
     ],
-    tolerations: [{ key: '', effect: 'NoSchedule' }],
+    tolerations: [...DAEMONSET_TOLERATIONS],
     volumeClaims: [],
     priority: 2000000000,
     priorityClassName: 'system-node-critical',
