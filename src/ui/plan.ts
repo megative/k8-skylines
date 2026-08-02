@@ -185,36 +185,111 @@ export function createPlan(bus: Bus): Plan {
   /* ---------------------------------------------------------------- geometry
 
      Top to bottom is the causal order the city also uses: clients, control
-     plane, the nodes that do the work, then the edge traffic arrives at. */
+     plane, the nodes that do the work, then the edge traffic arrives at.
 
-  band(20, 46, W - 40, 150, 'CONTROL PLANE')
-  box({ x: 430, y: 8, w: 140, h: 30, id: 'ground.cluster-boundary', title: 'clients', accent: COLOR.desired })
-  box({ x: 415, y: 66, w: 170, h: 46, id: 'api.tower', title: 'kube-apiserver', accent: COLOR.api }, 'the one door')
-  box({ x: 60, y: 128, w: 170, h: 46, id: 'scheduler', title: 'kube-scheduler', accent: COLOR.scheduler }, 'filter, score, bind')
-  box({ x: 415, y: 128, w: 170, h: 46, id: 'etcd-vault', title: 'etcd', accent: COLOR.etcd }, 'raft, the only storage')
-  box({ x: 770, y: 128, w: 170, h: 46, id: 'controllers.manager', title: 'controller-manager', accent: COLOR.controller }, 'reconcile loops')
+     The vertical extent is not fixed. A node card used to be 186px whatever it
+     held, so it showed nine pods and then the words "+3 more": a machine
+     running twelve pods looked exactly like one running two, which is the one
+     thing a plan of a cluster must not do — density is the whole reason to
+     look at it. Cards are sized from their contents instead, and everything
+     below them moves. The same goes for the Services row, which was capped at
+     six and silently dropped the seventh. */
 
-  band(20, 214, W - 40, 226, 'NODES')
+  /** One pod row inside a node card. */
+  const POD_ROW = 13
+  /** Name, condition and requests, above the first pod row. */
+  const NODE_HEAD = 58
+  const NODE_FOOT = 10
+  const SVC_H = 42
+  const SVC_GAP = 14
+  const SVC_PER_ROW = 6
 
-  band(20, 458, W - 40, 74, 'SERVICES — rule tables replicated to every node')
+  interface Layout {
+    nodesBandY: number
+    nodeY: number
+    nodeH: number
+    nodesBandH: number
+    svcBandY: number
+    svcY: number
+    svcRows: number
+    svcBandH: number
+    edgeBandY: number
+    edgeY: number
+    H: number
+  }
 
-  band(20, 548, W - 40, 74, 'EDGE')
-  box({ x: 60, y: 566, w: 150, h: 42, id: 'net.ingress', title: 'Ingress', accent: COLOR.ingress }, 'L7 rules')
-  box({ x: 240, y: 566, w: 170, h: 42, id: 'net.service.loadbalancer', title: 'LoadBalancer', accent: COLOR.network }, 'L4, own address')
-  box({ x: 440, y: 566, w: 150, h: 42, id: 'net.coredns', title: 'CoreDNS', accent: COLOR.dns }, 'cluster names')
-  box({ x: 620, y: 566, w: 150, h: 42, id: 'storage.plant', title: 'Storage', accent: COLOR.storage }, 'PV / CSI')
-  box({ x: 800, y: 566, w: 140, h: 42, id: 'registry.yard', title: 'Registry', accent: COLOR.image }, 'image layers')
+  const layoutOf = (s: SimState): Layout => {
+    let mostPods = 0
+    for (const n of s.nodes) if (n.present) mostPods = Math.max(mostPods, n.podUids.length)
+    /* A floor, so an empty cluster still reads as machines rather than slivers. */
+    const nodeH = Math.max(120, NODE_HEAD + mostPods * POD_ROW + NODE_FOOT)
+    const nodesBandY = 214
+    const nodeY = nodesBandY + 24
+    const nodesBandH = nodeH + 40
 
-  /* Wires. Each is a real relationship, and its colour is the mechanism's. */
-  wire([[500, 38], [500, 66]], COLOR.desired)
-  wire([[470, 112], [470, 128]], COLOR.etcd)
-  wire([[530, 128], [530, 112]], COLOR.raft)
-  wire([[415, 89], [145, 89], [145, 128]], COLOR.api, true)
-  wire([[585, 89], [855, 89], [855, 128]], COLOR.api, true)
-  wire([[145, 174], [145, 196], [430, 196], [430, 112]], COLOR.scheduler)
-  wire([[855, 174], [855, 196], [570, 196], [570, 112]], COLOR.controller)
-  /* The API server tells the kubelets, and the kubelets only ever pull. */
-  wire([[500, 174], [500, 214]], COLOR.kubelet, true)
+    const svcRows = Math.max(1, Math.ceil(s.services.length / SVC_PER_ROW))
+    const svcBandY = nodesBandY + nodesBandH + 18
+    const svcY = svcBandY + 24
+    const svcBandH = 24 + svcRows * SVC_H + (svcRows - 1) * SVC_GAP + 12
+
+    const edgeBandY = svcBandY + svcBandH + 16
+    return {
+      nodesBandY,
+      nodeY,
+      nodeH,
+      nodesBandH,
+      svcBandY,
+      svcY,
+      svcRows,
+      svcBandH,
+      edgeBandY,
+      edgeY: edgeBandY + 18,
+      H: edgeBandY + 74 + 18,
+    }
+  }
+
+  /*
+   * The scaffolding depends on how tall the live content is, so it is rebuilt
+   * when that changes rather than once at construction. The signature keeps
+   * that to the frames where it actually moved — this runs at most six times a
+   * second, and re-creating a hundred SVG nodes on every one of them for a
+   * layout that did not change would be waste.
+   */
+  const buildFrame = (L: Layout): void => {
+    wires.textContent = ''
+    frames.textContent = ''
+    root.setAttribute('viewBox', `0 0 ${W} ${L.H}`)
+
+    band(20, 46, W - 40, 150, 'CONTROL PLANE')
+    box({ x: 430, y: 8, w: 140, h: 30, id: 'ground.cluster-boundary', title: 'clients', accent: COLOR.desired })
+    box({ x: 415, y: 66, w: 170, h: 46, id: 'api.tower', title: 'kube-apiserver', accent: COLOR.api }, 'the one door')
+    box({ x: 60, y: 128, w: 170, h: 46, id: 'scheduler', title: 'kube-scheduler', accent: COLOR.scheduler }, 'filter, score, bind')
+    box({ x: 415, y: 128, w: 170, h: 46, id: 'etcd-vault', title: 'etcd', accent: COLOR.etcd }, 'raft, the only storage')
+    box({ x: 770, y: 128, w: 170, h: 46, id: 'controllers.manager', title: 'controller-manager', accent: COLOR.controller }, 'reconcile loops')
+
+    band(20, L.nodesBandY, W - 40, L.nodesBandH, 'NODES')
+    band(20, L.svcBandY, W - 40, L.svcBandH, 'SERVICES — rule tables replicated to every node')
+
+    band(20, L.edgeBandY, W - 40, 74, 'EDGE')
+    box({ x: 60, y: L.edgeY, w: 150, h: 42, id: 'net.ingress', title: 'Ingress', accent: COLOR.ingress }, 'L7 rules')
+    box({ x: 240, y: L.edgeY, w: 170, h: 42, id: 'net.service.loadbalancer', title: 'LoadBalancer', accent: COLOR.network }, 'L4, own address')
+    box({ x: 440, y: L.edgeY, w: 150, h: 42, id: 'net.coredns', title: 'CoreDNS', accent: COLOR.dns }, 'cluster names')
+    box({ x: 620, y: L.edgeY, w: 150, h: 42, id: 'storage.plant', title: 'Storage', accent: COLOR.storage }, 'PV / CSI')
+    box({ x: 800, y: L.edgeY, w: 140, h: 42, id: 'registry.yard', title: 'Registry', accent: COLOR.image }, 'image layers')
+
+    /* Wires. Each is a real relationship, and its colour is the mechanism's. */
+    wire([[500, 38], [500, 66]], COLOR.desired)
+    wire([[470, 112], [470, 128]], COLOR.etcd)
+    wire([[530, 128], [530, 112]], COLOR.raft)
+    wire([[415, 89], [145, 89], [145, 128]], COLOR.api, true)
+    wire([[585, 89], [855, 89], [855, 128]], COLOR.api, true)
+    wire([[145, 174], [145, 196], [430, 196], [430, 112]], COLOR.scheduler)
+    wire([[855, 174], [855, 196], [570, 196], [570, 112]], COLOR.controller)
+    /* The API server tells the kubelets, and the kubelets only ever pull. */
+    wire([[500, 174], [500, L.nodesBandY]], COLOR.kubelet, true)
+  }
+
+  let frameSig = ''
 
   /* ------------------------------------------------------------- live layer */
 
@@ -231,21 +306,27 @@ export function createPlan(bus: Bus): Plan {
     }
   }
 
-  const drawNodes = (s: SimState): void => {
+  const drawNodes = (s: SimState, L: Layout): void => {
     const present = s.nodes.filter((n) => n.present)
     const cw = (W - 80) / nodeCols
     for (let i = 0; i < present.length; i++) {
       const n = present[i]
       const x = 40 + (i % nodeCols) * cw
-      const y = 238
+      const y = L.nodeY
       const w = cw - 16
-      const h = 186
+      const h = L.nodeH
       let ready = 'Unknown'
       for (const c of n.conditions) if (c.type === 'Ready') ready = c.status === 'True' ? 'Ready' : c.status === 'False' ? 'NotReady' : 'Unknown'
       const accent = ready === 'Ready' ? COLOR.kubelet : ready === 'Unknown' ? COLOR.terminating : COLOR.failed
 
       const g = svg('g', { class: 'pl-box', tabindex: '0', role: 'button' })
+      /* Two different things, and conflating them is what made the inspector
+       * show a representative: `id` names the lesson, `kind` names the API
+       * kind the object belongs to. For a node those are `node-0` and `node`. */
       g.dataset.id = `node-${n.index}`
+      g.dataset.kind = 'node'
+      g.dataset.name = n.name
+      g.dataset.ns = ''
       g.append(
         svg('rect', { x, y, width: w, height: h, rx: 7, class: 'pl-rect', style: `--pl-accent:${hex(accent)}` }),
       )
@@ -271,13 +352,13 @@ export function createPlan(bus: Bus): Plan {
        * red one" and have them find it again — and the names fit, as the tree
        * already proves.
        */
-      const rowH = 13
-      const shown = Math.min(pods.length, 9)
-      for (let k = 0; k < shown; k++) {
+      const rowH = POD_ROW
+      for (let k = 0; k < pods.length; k++) {
         const p = pods[k]
-        const py = y + 58 + k * rowH
+        const py = y + NODE_HEAD + k * rowH
         const pg = svg('g', { class: 'pl-pod', tabindex: '0', role: 'button' })
         pg.dataset.id = 'pod'
+        pg.dataset.kind = 'pod'
         pg.dataset.name = p.name
         pg.dataset.ns = p.namespace
         pg.append(
@@ -302,25 +383,17 @@ export function createPlan(bus: Bus): Plan {
         pg.append(tip)
         live.append(pg)
       }
-      if (pods.length > shown) {
-        const more = svg('text', { x: x + 22, y: y + 58 + shown * rowH + 9, class: 'pl-sub' })
-        /* Never silently truncate: a plan that hides pods reads as a cluster
-         * that has none. */
-        more.textContent = `+${pods.length - shown} more`
-        live.append(more)
-      }
     }
     /* Machines that are not in the cluster are absent, not broken: nothing is
      * drawn for them at all, the same claim the city's empty ground makes. */
   }
 
-  const drawServices = (s: SimState): void => {
-    const n = Math.min(s.services.length, 6)
-    const cw = (W - 80) / 6
-    for (let i = 0; i < n; i++) {
+  const drawServices = (s: SimState, L: Layout): void => {
+    const cw = (W - 80) / SVC_PER_ROW
+    for (let i = 0; i < s.services.length; i++) {
       const v = s.services[i]
-      const x = 40 + i * cw
-      const y = 482
+      const x = 40 + (i % SVC_PER_ROW) * cw
+      const y = L.svcY + Math.floor(i / SVC_PER_ROW) * (SVC_H + SVC_GAP)
       const w = cw - 14
       const accent = v.type === 'LoadBalancer' ? COLOR.network : v.type === 'Headless' ? COLOR.edge : COLOR.traffic
       let ready = 0
@@ -328,7 +401,10 @@ export function createPlan(bus: Bus): Plan {
 
       const g = svg('g', { class: 'pl-box', tabindex: '0', role: 'button' })
       g.dataset.id = 'net.service'
-      g.append(svg('rect', { x, y, width: w, height: 42, rx: 6, class: 'pl-rect', style: `--pl-accent:${hex(accent)}` }))
+      g.dataset.kind = 'net.service'
+      g.dataset.name = v.name
+      g.dataset.ns = v.namespace
+      g.append(svg('rect', { x, y, width: w, height: SVC_H, rx: 6, class: 'pl-rect', style: `--pl-accent:${hex(accent)}` }))
       const t = svg('text', { x: x + 8, y: y + 17, class: 'pl-t pl-t-s' })
       t.textContent = v.name
       const st = svg('text', { x: x + 8, y: y + 31, class: 'pl-sub' })
@@ -347,18 +423,21 @@ export function createPlan(bus: Bus): Plan {
    * flow, so the question it was most often opened to answer — where are the
    * requests going — was the one it could not.
    */
-  const drawFlows = (s: SimState): void => {
+  const drawFlows = (s: SimState, L: Layout): void => {
     const svcRps = (n: string): number => s.services.find((v) => v.name === n)?.rps ?? 0
     const ingRps = s.ingresses.reduce((a, i) => a + i.rps, 0)
     const lbRps = svcRps('web-lb')
 
     /* North-south: the two doors, each on its own address. */
-    flow([[135, 566], [135, 532]], COLOR.ingress, ingRps, `${Math.round(ingRps)} rps`)
-    flow([[325, 566], [325, 532]], COLOR.network, lbRps, `${Math.round(lbRps)} rps`)
+    const svcBottom = L.svcBandY + L.svcBandH
+    flow([[135, L.edgeY], [135, svcBottom]], COLOR.ingress, ingRps, `${Math.round(ingRps)} rps`)
+    flow([[325, L.edgeY], [325, svcBottom]], COLOR.network, lbRps, `${Math.round(lbRps)} rps`)
 
-    /* Each Service down into the node band it feeds. */
-    const cw = (W - 80) / 6
-    const n = Math.min(s.services.length, 6)
+    /* Each Service up into the node band it feeds. Only the first row of cards
+     * is wired: a second row means more Services than the model seeds, and a
+     * lane drawn to the wrong card would be worse than none. */
+    const cw = (W - 80) / SVC_PER_ROW
+    const n = Math.min(s.services.length, SVC_PER_ROW)
     for (let i = 0; i < n; i++) {
       const v = s.services[i]
       if (v.rps <= 0.01) continue
@@ -368,7 +447,7 @@ export function createPlan(bus: Bus): Plan {
        * however much the knob is asking for. */
       if (ready === 0) continue
       const x = 40 + i * cw + (cw - 14) / 2
-      flow([[x, 482], [x, 440]], COLOR.traffic, v.rps)
+      flow([[x, L.svcY], [x, L.nodesBandY + L.nodesBandH]], COLOR.traffic, v.rps)
     }
 
     /* The control plane's own conversation, which never stops. */
@@ -376,10 +455,10 @@ export function createPlan(bus: Bus): Plan {
     /* Writes are what reaches raft; the model tracks the etcd revision rather
      * than a write rate, so this follows whether commits are landing at all. */
     flow([[470, 112], [470, 128]], COLOR.raft, s.etcd.hasQuorum ? s.api.requestsPerSec * 0.35 : 0)
-    flow([[500, 174], [500, 214]], COLOR.kubelet, s.nodes.filter((x) => x.present).length)
+    flow([[500, 174], [500, L.nodesBandY]], COLOR.kubelet, s.nodes.filter((x) => x.present).length)
   }
 
-  const drawStatus = (s: SimState): void => {
+  const drawStatus = (s: SimState, L: Layout): void => {
     const q = s.etcd.members.filter((m) => m.role !== 'down').length
     const txt = svg('text', { x: 585, y: 158, class: 'pl-stat' })
     txt.textContent = s.etcd.hasQuorum ? `quorum ${q}/${ETCD_QUORUM}` : 'NO QUORUM'
@@ -405,12 +484,18 @@ export function createPlan(bus: Bus): Plan {
     acc = 0
     /* One wholesale rewrite of the live layer. The plan is small enough that
      * diffing it would cost more to maintain than it saves. */
+    const L = layoutOf(s)
+    const sig = `${L.H}:${L.nodeH}:${L.svcRows}`
+    if (sig !== frameSig) {
+      frameSig = sig
+      buildFrame(L)
+    }
     live.textContent = ''
     flowLayer.textContent = ''
-    drawFlows(s)
-    drawNodes(s)
-    drawServices(s)
-    drawStatus(s)
+    drawFlows(s, L)
+    drawNodes(s, L)
+    drawServices(s, L)
+    drawStatus(s, L)
     markSelected()
   }
 
@@ -425,7 +510,7 @@ export function createPlan(bus: Bus): Plan {
        * `focus` names the mechanism it is an instance of. Surfaces that emit
        * only one of them make the three views disagree about the selection. */
       if (hit.dataset.name) {
-        bus.emit('inspect', { kind: hit.dataset.id, namespace: hit.dataset.ns ?? '', name: hit.dataset.name })
+        bus.emit('inspect', { kind: hit.dataset.kind ?? hit.dataset.id, namespace: hit.dataset.ns ?? '', name: hit.dataset.name })
       }
       /* 'click' is what tells the inspector this focus arrived with an object;
        * any other source means a mechanism was named on its own. */
@@ -453,7 +538,7 @@ export function createPlan(bus: Bus): Plan {
       /* The same pair the pointer path emits: keyboard selection must not
        * select less than a click on the same card. */
       if (hit.dataset.name) {
-        bus.emit('inspect', { kind: hit.dataset.id, namespace: hit.dataset.ns ?? '', name: hit.dataset.name })
+        bus.emit('inspect', { kind: hit.dataset.kind ?? hit.dataset.id, namespace: hit.dataset.ns ?? '', name: hit.dataset.name })
       }
       bus.emit('focus', { id: hit.dataset.id, source: 'click' })
     }
