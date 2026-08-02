@@ -47,6 +47,7 @@ import { createTree } from './ui/tree'
 import { createHelp } from './ui/help'
 import { createTour } from './ui/tour'
 import { createViewbar } from './ui/viewbar'
+import { createPlaces } from './ui/places'
 import { createScenarioBrowser } from './ui/scenarios'
 import { flowPath } from './world/paths'
 
@@ -129,7 +130,7 @@ function main(): void {
   districts.push(flows)
 
   const rig = createCameraRig(gfx, canvas, bus)
-  const labels = createLabels(gfx, registry, document.getElementById('labels')!)
+  const labels = createLabels(gfx, registry, document.getElementById('labels')!, bus)
   const picker = createPicker(gfx, registry, bus, canvas, (kind, uid) => {
     /* Only pods stamp a uid today; other districts can join by doing the same. */
     if (kind !== 'pod') return undefined
@@ -145,6 +146,7 @@ function main(): void {
   createHelp(bus)
   const tour = createTour(bus, registry)
   createViewbar(bus, rig)
+  const places = createPlaces(bus, rig, registry)
   const scenarios = createScenarioBrowser(bus)
   const trace = createTrace(gfx)
   createPathReader(bus)
@@ -389,6 +391,7 @@ function main(): void {
     panel.update(s)
     tour.update(dt)
     scenarios.update(s, dt)
+    places.update()
     plan.update(s, dt)
     tree.update(s, dt)
 

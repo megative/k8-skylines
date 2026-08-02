@@ -1231,6 +1231,17 @@ export function createNodes(ctx: WorldCtx): WorldModule {
         ]
       },
     })
+    /*
+     * The machine itself is the backstop for everything standing on it.
+     *
+     * The entry above hangs on the deck mesh, so any part of a node without a
+     * binding of its own — struts, gauge frames, kerbs, signage, 289 meshes of
+     * them across four machines — resolved to nothing and swallowed its click
+     * in silence. `resolve()` walks up and stops at the nearest binding, so the
+     * parts that do explain a mechanism keep explaining it, and the rest now
+     * answer with the true, duller thing: this is part of that node.
+     */
+    ctx.registry.bind(p.group, p.entry)
   }
 
   shared('console', {

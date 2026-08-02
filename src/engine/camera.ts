@@ -515,7 +515,7 @@ export function createCameraRig(gfx: Gfx, dom: HTMLElement, bus: Bus): CameraRig
     placeCamera(cx + _v2.x * d, cy + _v2.y * d, cz + _v2.z * d, cx, cy, cz)
   }
 
-  function focusObject(o: THREE.Object3D, padding = 1.35): void {
+  function focusObject(o: THREE.Object3D, padding = 1.35, take = false): void {
     /* No building can be framed from eye height; leave walk before measuring so
      * the field of view used for the framing distance is the one we land in. */
     if (mode === 'walk') setMode('orbit')
@@ -558,7 +558,11 @@ export function createCameraRig(gfx: Gfx, dom: HTMLElement, bus: Bus): CameraRig
      * So the flight is for fetching something you cannot see. If it is on
      * screen and big enough to look at, the view the reader built stands.
      */
-    if (isReadable(cx, cy, cz, radius)) return
+    /* `take` is navigation: the reader asked to be brought here from a list,
+     * and answering "you can already see it" leaves them staring at a quarter
+     * wondering why the menu did nothing. A click on the geometry itself is the
+     * opposite request and keeps the guard. */
+    if (!take && isReadable(cx, cy, cz, radius)) return
     const fitted = framingDistance(radius, FOV[mode], camera.aspect, padding)
     frameAt(cx, cy, cz, clamp(fitted, MIN_FOCUS_DIST, MAX_FOCUS_DIST))
   }
@@ -1261,7 +1265,7 @@ export function createCameraRig(gfx: Gfx, dom: HTMLElement, bus: Bus): CameraRig
       return
     }
     if (entry.object) {
-      focusObject(entry.object)
+      focusObject(entry.object, 1.35, true)
       return
     }
     const d = districtById(entry.district)

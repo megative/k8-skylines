@@ -1590,3 +1590,108 @@ code.tour-code {
 }
 
 
+
+/* ---------------------------------------------------------------- places
+ *
+ * The way out of wherever you ended up. Top-left, opposite the view bar, so
+ * the two navigation surfaces do not compete for the same corner.
+ *
+ * Above the labels layer, not below it. The first attempt reasoned that signage
+ * names what is in front of you and a menu must never hide it — but while the
+ * menu is open the menu *is* what is in front of you, and a district name
+ * showing through it reads as one of its rows.
+ */
+#places {
+  position: fixed;
+  left: 0.75rem;
+  top: 3.4rem;
+  z-index: 22;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  font: 500 12px/1.3 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+.pl-toggle {
+  padding: 0.3rem 0.7rem;
+  border-radius: 0.4rem;
+  border: 1px solid var(--k8-border);
+  background: var(--k8-panel);
+  color: var(--k8-text);
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 11px;
+}
+.pl-toggle:hover,
+.pl-toggle.is-on {
+  border-color: var(--k8-accent);
+  color: var(--k8-accent);
+}
+
+/* `display` in author CSS beats the `hidden` attribute's UA rule, so hidden has
+ * to be spelled out or the drawer opens itself on load. */
+.pc-drawer[hidden] {
+  display: none;
+}
+
+.pc-drawer {
+  display: flex;
+  flex-direction: column;
+  min-width: 9.5rem;
+  padding: 0.3rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--k8-border);
+  /* Opaque, not the translucent panel fill: a list of place names read over a
+   * moving city is work, and the whole point of this surface is that it is not. */
+  background: var(--k8-bg);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 45%);
+}
+
+.pc-row {
+  text-align: left;
+  padding: 0.28rem 0.5rem;
+  border: 0;
+  border-radius: 0.3rem;
+  background: transparent;
+  color: var(--k8-text);
+  cursor: pointer;
+  font: inherit;
+}
+.pc-row:hover {
+  background: var(--k8-panel-2);
+}
+
+/* Overview and Home are not districts; a rule separates them from the map. */
+.pc-list {
+  display: flex;
+  flex-direction: column;
+  margin-top: 0.3rem;
+  border-top: 1px solid var(--k8-border);
+  padding-top: 0.3rem;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+/* An open district reads as a heading over its contents, not as a pressed
+ * button: what is under it is the answer, and it should draw the eye. */
+.pc-district.is-open {
+  color: var(--k8-accent);
+}
+
+.pc-sub {
+  padding-left: 1.15rem;
+  color: var(--k8-dim);
+  font-size: 11px;
+}
+.pc-sub:hover {
+  color: var(--k8-text);
+}
+
+.pc-empty {
+  padding: 0.2rem 0.5rem 0.3rem 1.15rem;
+  color: var(--k8-dim);
+  font-size: 11px;
+  font-style: italic;
+}

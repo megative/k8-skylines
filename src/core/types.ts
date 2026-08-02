@@ -374,6 +374,18 @@ export interface NodeCondition {
   sinceSeconds: number
 }
 
+/*
+ * The taints the node controller writes when a kubelet stops reporting.
+ *
+ * They live here, in a module nothing else imports, because `src/sim` has an
+ * import cycle: putting them in ctx.ts left the binding uninitialised by the
+ * time controllers.ts reached for it in the browser, and the node controller
+ * threw on every tick while every unit test passed — vitest builds the module
+ * graph differently, so the cycle never bit there.
+ */
+export const TAINT_UNREACHABLE = 'node.kubernetes.io/unreachable'
+export const TAINT_NOT_READY = 'node.kubernetes.io/not-ready'
+
 export interface Taint {
   key: string
   value?: string

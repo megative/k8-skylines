@@ -998,11 +998,6 @@ export function toleratesTaint(tolerations: readonly Taint[], taint: Taint): boo
   return false
 }
 
-/* The taints the node controller writes when a kubelet stops reporting. One
- * owner: the seed hands the DaemonSet tolerations for these exact keys. */
-export const TAINT_UNREACHABLE = 'node.kubernetes.io/unreachable'
-export const TAINT_NOT_READY = 'node.kubernetes.io/not-ready'
-
 export function clampKnobs(k: Knobs): void {
   k.replicas = clamp(Math.round(k.replicas), 0, N_NODES * POD_SLOTS_PER_NODE)
   k.trafficRps = clamp(k.trafficRps, 0, 5000)

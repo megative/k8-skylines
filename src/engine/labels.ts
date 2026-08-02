@@ -1,5 +1,6 @@
 import * as THREE from 'three'
-import type { Explainer, SimState } from '../core/types'
+import type { DistrictId, Explainer, SimState } from '../core/types'
+import type { Bus } from '../core/bus'
 import type { Registry } from '../core/registry'
 import { COLOR } from '../core/theme'
 import { smoothstep } from '../core/util'
@@ -71,6 +72,8 @@ const _viewInv = new THREE.Matrix4()
 
 interface Cand {
   isDistrict: boolean
+  /** District id or Explainer id: what a click on this label should select. */
+  id: string
   entry: Explainer | null
   obj: THREE.Object3D | null
   text: string
@@ -124,7 +127,7 @@ function anchorShown(o: THREE.Object3D): boolean {
   return true
 }
 
-export function createLabels(gfx: Gfx, registry: Registry, container: HTMLElement): Labels {
+export function createLabels(gfx: Gfx, registry: Registry, container: HTMLElement, bus: Bus): Labels {
   const text = css(COLOR.text)
   const edge = css(COLOR.edge)
 
@@ -147,7 +150,11 @@ export function createLabels(gfx: Gfx, registry: Registry, container: HTMLElemen
       'background:var(--k8-label-bg,rgba(8,11,18,.46));border:1px solid var(--k8-label-edge,#4a5a7059);' +
       'color:var(--k8-text,#e8eef6);' +
       'font:500 12px/1.3 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;' +
-      'letter-spacing:.01em;text-shadow:var(--k8-label-shadow,0 1px 3px rgba(0,0,0,.85));'
+      'letter-spacing:.01em;text-shadow:var(--k8-label-shadow,0 1px 3px rgba(0,0,0,.85));' +
+      /* The layer itself never eats pointer events; a chip opts back in. Signage
+       * you can read but not press is the city asking you to hunt for a two-pixel
+       * cube when its name is already on screen and larger than it is. */
+      'pointer-events:auto;cursor:pointer;'
 
     const tEl = document.createElement('span')
     tEl.style.cssText = 'display:block;'
@@ -191,6 +198,7 @@ export function createLabels(gfx: Gfx, registry: Registry, container: HTMLElemen
       const d = DISTRICTS[i]
       cands.push({
         isDistrict: true,
+        id: d.id,
         entry: null,
         obj: null,
         text: d.label,
@@ -216,6 +224,7 @@ export function createLabels(gfx: Gfx, registry: Registry, container: HTMLElemen
       if (!e.object) continue
       cands.push({
         isDistrict: false,
+        id: e.id,
         entry: e,
         obj: e.object,
         text: e.title,
@@ -252,6 +261,31 @@ export function createLabels(gfx: Gfx, registry: Registry, container: HTMLElemen
   readViewport()
   const onResize = (): void => readViewport()
   window.addEventListener('resize', onResize, { passive: true })
+
+  /*
+   * A label is a click target, not just a caption.
+   *
+   * The signage is always larger than the thing it names and never overlaps
+   * another chip — the placement pass guarantees that — so it is the easiest
+   * thing on screen to hit. Aiming at the geometry instead means aiming at one
+   * of thirteen mechanisms crowded onto a couple of metres of pod lot, where a
+   * two-pixel miss gives a different and equally plausible answer.
+   *
+   * Delegated, because the pool is reused: the chip under the cursor is a
+   * different candidate from one second to the next.
+   */
+  const onLabelClick = (ev: MouseEvent): void => {
+    const t = ev.target
+    if (!(t instanceof HTMLElement)) return
+    const chip = t.closest('[data-act]')
+    if (!(chip instanceof HTMLElement)) return
+    const id = chip.dataset.id
+    if (!id) return
+    ev.preventDefault()
+    if (chip.dataset.act === 'district') bus.emit('focus-district', { id: id as DistrictId })
+    else bus.emit('focus', { id, source: 'click' })
+  }
+  container.addEventListener('click', onLabelClick)
 
   /* Placement bookkeeping. Fixed-size: no allocation during layout. */
   const rx0 = new Float32Array(MAX_SLOTS)
@@ -459,8 +493,12 @@ export function createLabels(gfx: Gfx, registry: Registry, container: HTMLElemen
         sl.tEl.textContent = c.text
         sl.measure = true
       }
+      if (fresh) sl.el.dataset.id = c.id
       if (fresh || sl.district !== c.isDistrict) {
         sl.district = c.isDistrict
+        /* What this chip selects when clicked. A district flies the camera to
+         * its ground; anything else names a mechanism. */
+        sl.el.dataset.act = c.isDistrict ? 'district' : 'focus'
         sl.box.style.textTransform = c.isDistrict ? 'uppercase' : 'none'
         sl.box.style.letterSpacing = c.isDistrict ? '.16em' : '.01em'
         sl.box.style.fontSize = c.isDistrict ? '13px' : '12px'
@@ -517,6 +555,7 @@ export function createLabels(gfx: Gfx, registry: Registry, container: HTMLElemen
 
   function dispose(): void {
     window.removeEventListener('resize', onResize)
+    container.removeEventListener('click', onLabelClick)
     for (let i = 0; i < slots.length; i++) slots[i].el.remove()
     slots.length = 0
     cands.length = 0

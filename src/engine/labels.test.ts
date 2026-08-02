@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { Bus } from '../core/bus'
 import { Registry } from '../core/registry'
 import type { SimState } from '../core/types'
 import { ANCHOR, DISTRICTS } from '../world/layout'
@@ -36,6 +37,16 @@ class FakeEl {
   clientWidth = 1600
   clientHeight = 900
   constructor(readonly tag: string) {}
+  /* The label layer listens for clicks so its chips can be pressed; the fake
+   * only has to accept the registration, not deliver anything. */
+  readonly dataset: Record<string, string> = {}
+  readonly listeners = new Map<string, unknown>()
+  addEventListener(type: string, fn: unknown): void {
+    this.listeners.set(type, fn)
+  }
+  removeEventListener(type: string): void {
+    this.listeners.delete(type)
+  }
   appendChild(c: FakeEl): FakeEl {
     c.parent = this
     this.children.push(c)
@@ -148,7 +159,7 @@ describe('labels', () => {
     const { gfx, registry } = scene()
     gfx.camera.position.set(0, 900, 620)
     gfx.camera.lookAt(0, 0, -40)
-    const labels = createLabels(gfx, registry, container as unknown as HTMLElement)
+    const labels = createLabels(gfx, registry, container as unknown as HTMLElement, new Bus())
     run(labels)
     const list = shown(container)
     expect(list.length).toBeGreaterThan(2)
@@ -159,7 +170,7 @@ describe('labels', () => {
     const { gfx, registry } = scene()
     gfx.camera.position.set(0, 180, ANCHOR.apiServer[2] + 230)
     gfx.camera.lookAt(0, 30, ANCHOR.apiServer[2])
-    const labels = createLabels(gfx, registry, container as unknown as HTMLElement)
+    const labels = createLabels(gfx, registry, container as unknown as HTMLElement, new Bus())
     run(labels)
     const list = shown(container)
     const names = list.map((l) => l.text)
@@ -172,7 +183,7 @@ describe('labels', () => {
     const { gfx, registry } = scene()
     gfx.camera.position.set(0, 60, ANCHOR.apiServer[2] + 90)
     gfx.camera.lookAt(0, 30, ANCHOR.apiServer[2])
-    const labels = createLabels(gfx, registry, container as unknown as HTMLElement)
+    const labels = createLabels(gfx, registry, container as unknown as HTMLElement, new Bus())
     /* Values are rationed to a couple of labels per frame by design. */
     run(labels, 40)
     const list = shown(container)
@@ -183,7 +194,7 @@ describe('labels', () => {
     const { gfx, registry, meshes } = scene()
     gfx.camera.position.set(0, 180, ANCHOR.apiServer[2] + 230)
     gfx.camera.lookAt(0, 30, ANCHOR.apiServer[2])
-    const labels = createLabels(gfx, registry, container as unknown as HTMLElement)
+    const labels = createLabels(gfx, registry, container as unknown as HTMLElement, new Bus())
     run(labels, 30)
     expect(shown(container).some((l) => l.text === 'Building number 3')).toBe(true)
 
@@ -214,7 +225,7 @@ describe('labels', () => {
     const { gfx, registry } = scene()
     gfx.camera.position.set(0, 90, ANCHOR.apiServer[2] + 150)
     gfx.camera.lookAt(0, 30, ANCHOR.apiServer[2])
-    const labels = createLabels(gfx, registry, container as unknown as HTMLElement)
+    const labels = createLabels(gfx, registry, container as unknown as HTMLElement, new Bus())
     run(labels, 30)
     const list = shown(container)
     expect(list.length).toBeGreaterThan(1)
@@ -234,7 +245,7 @@ describe('labels', () => {
     /* South of the whole city, facing further south: every anchor is behind. */
     gfx.camera.position.set(0, 90, 1000)
     gfx.camera.lookAt(0, 90, 2000)
-    const labels = createLabels(gfx, registry, container as unknown as HTMLElement)
+    const labels = createLabels(gfx, registry, container as unknown as HTMLElement, new Bus())
     run(labels)
     expect(shown(container)).toHaveLength(0)
   })
@@ -243,7 +254,7 @@ describe('labels', () => {
     const { gfx, registry } = scene()
     gfx.camera.position.set(0, 180, ANCHOR.apiServer[2] + 230)
     gfx.camera.lookAt(0, 30, ANCHOR.apiServer[2])
-    const labels = createLabels(gfx, registry, container as unknown as HTMLElement)
+    const labels = createLabels(gfx, registry, container as unknown as HTMLElement, new Bus())
     const nodes = container.children.length
     run(labels, 30)
     gfx.camera.position.set(0, 900, 620)
@@ -258,7 +269,7 @@ describe('labels', () => {
     const { gfx, registry } = scene()
     gfx.camera.position.set(0, 180, ANCHOR.apiServer[2] + 230)
     gfx.camera.lookAt(0, 30, ANCHOR.apiServer[2])
-    const labels = createLabels(gfx, registry, container as unknown as HTMLElement)
+    const labels = createLabels(gfx, registry, container as unknown as HTMLElement, new Bus())
     run(labels)
     expect(shown(container).length).toBeGreaterThan(0)
     labels.setVisible(false)

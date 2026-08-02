@@ -23,6 +23,8 @@ import {
   type PodState,
   type ReplicaSetState,
   type ServiceState,
+  TAINT_NOT_READY,
+  TAINT_UNREACHABLE,
 } from '../core/types'
 import { clamp, selectorMatches } from '../core/util'
 import { SUBJECTS, submit } from './controlplane'
@@ -50,8 +52,6 @@ import {
   setCondition,
   toleratesTaint,
   removePod,
-  TAINT_NOT_READY,
-  TAINT_UNREACHABLE,
 } from './ctx'
 import { flushUnschedulable } from './scheduling'
 import { findPvc, reclaim, reconcileClaim } from './storage'

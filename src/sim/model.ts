@@ -32,6 +32,8 @@ import {
   type NodeState,
   type SimState,
   type Taint,
+  TAINT_NOT_READY,
+  TAINT_UNREACHABLE,
 } from '../core/types'
 import { bus } from '../core/bus'
 import { Rng, clamp, clusterIp } from '../core/util'
@@ -43,8 +45,6 @@ import {
   emit,
   key,
   podIsTerminating,
-  TAINT_NOT_READY,
-  TAINT_UNREACHABLE,
   type ContainerSpec,
   type DeploySpec,
   type SimCtx,
