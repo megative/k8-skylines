@@ -375,6 +375,16 @@ export interface Store {
   rolloutMark: Map<string, number>
   /** Node index -> model seconds it has been missing its Lease. */
   nodeUnreadyFor: number[]
+  /**
+   * The `nodeCount` this store has already acted on.
+   *
+   * Membership is state, not a projection of the knob. It used to be derived
+   * every tick as `index < nodeCount`, which can only ever express "the last n
+   * machines" — so deleting a Node by name was impossible, and the next tick
+   * would have put it straight back. The knob is an intent, applied when it
+   * changes; between changes the `present` flags stand on their own.
+   */
+  nodeCountApplied: number
   cmLeaseInflight: boolean
   schedLeaseInflight: boolean
   /** Deployment revisions whose pods can never pass readiness. */
@@ -501,6 +511,7 @@ export function createStore(controllerOrder: ControllerId[]): Store {
     rolloutProgressAt: new Map(),
     rolloutMark: new Map(),
     nodeUnreadyFor: new Array<number>(N_NODES).fill(0),
+    nodeCountApplied: -1,
     cmLeaseInflight: false,
     schedLeaseInflight: false,
     wedgedRevisions: new Set(),

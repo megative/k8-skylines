@@ -166,6 +166,39 @@ describe('removing a machine from the cluster', () => {
   })
 
   /*
+   * `kubectl delete node` names one machine. Scaling the cluster down is a
+   * different sentence — "I want fewer" — and it takes whichever is last. The
+   * two were the same operation here, so a reader who deleted node-2 watched
+   * node-4 disappear instead.
+   */
+  it('deletes the machine that was named, not the last one', () => {
+    const sim = createSim(0x9a17)
+    run(sim, 60)
+    const before = sim.state.nodes.filter((n) => n.present).map((n) => n.name)
+    expect(before.length).toBeGreaterThan(2)
+    const target = before[1]
+    const last = before[before.length - 1]
+
+    expect(sim.deleteObject('node', '', target)).toBe(true)
+    /* The delete commits a few ticks later like every other write, and PodGC
+     * holds orphans for its quarantine before touching them. */
+    run(sim, TIMING.podGcQuarantineSeconds + 30)
+
+    const after = sim.state.nodes.filter((n) => n.present).map((n) => n.name)
+    expect(after).not.toContain(target)
+    expect(after).toContain(last)
+    expect(after).toHaveLength(before.length - 1)
+    /* Nothing is left standing on a machine whose Node object is gone. */
+    expect(podsOn(sim, target)).toEqual([])
+  })
+
+  it('refuses to delete a machine that is not in the cluster', () => {
+    const sim = createSim(0x9a18)
+    run(sim, 30)
+    expect(sim.deleteObject('node', '', 'node-99')).toBe(false)
+  })
+
+  /*
    * And it stays for the right reason. The DaemonSet controller writes the two
    * NoExecute tolerations onto every pod it creates — that is what keeps a node
    * agent in place on a machine nobody can reach — so they have to be on the

@@ -133,6 +133,17 @@ describe('kubectl: changing the model', () => {
     expect(r.lines.some((l) => /recreate/.test(l.text))).toBe(true)
   })
 
+  /* A Node is cluster-scoped, so the intent carries no namespace — and the
+   * console has to be able to reach the delete path at all, which is the half
+   * that is easy to leave unwired. */
+  it('deletes a node by name, with no namespace', () => {
+    const { env, sim } = envAt(60)
+    const name = sim.state.nodes.find((n) => n.present)!.name
+    const r = runKubectl(`delete node ${name}`, env)
+    expect(r.intents).toContainEqual({ kind: 'delete', resource: 'node', namespace: '', name })
+    expect(r.lines[0].cls).not.toBe('err')
+  })
+
   it('errors on a resource with no delete path in the model', () => {
     const { env, sim } = envAt(30)
     const pv = sim.state.pvs[0]
@@ -170,18 +181,29 @@ describe('kubectl: changing the model', () => {
     expect(c.options.sort()).toEqual(depNames.sort())
   })
 
-  it('delete node removes the last machine, and only the last', () => {
+  /*
+   * `delete node` used to refuse any machine but the last and then decrement
+   * the Nodes knob instead of deleting anything, because membership was derived
+   * from that count. It is a real delete now, through the same API pipeline as
+   * every other kind, and any machine in the cluster can be named.
+   */
+  it('delete node deletes the machine that was named, whichever it is', () => {
     const { env, sim } = envAt(60)
     const present = sim.state.nodes.filter((n) => n.present)
-    const last = present[present.length - 1]
     const notLast = present[0]
 
-    const bad = runKubectl(`delete node ${notLast.name}`, env)
-    expect(bad.lines[0].cls).toBe('err')
-    expect(bad.intents).toEqual([])
+    const r = runKubectl(`delete node ${notLast.name}`, env)
+    expect(r.lines[0].cls).not.toBe('err')
+    expect(r.intents).toContainEqual({ kind: 'delete', resource: 'node', namespace: '', name: notLast.name })
+    /* Not a knob change. Scaling the cluster is the other sentence. */
+    expect(r.intents.some((i) => i.kind === 'knob')).toBe(false)
+  })
 
-    const good = runKubectl(`delete node ${last.name}`, env)
-    expect(good.intents).toContainEqual({ kind: 'knob', key: 'nodeCount', value: present.length - 1 })
+  it('refuses a machine that is not in the cluster', () => {
+    const { env } = envAt(30)
+    const r = runKubectl('delete node node-99', env)
+    expect(r.lines[0].cls).toBe('err')
+    expect(r.intents).toEqual([])
   })
 })
 

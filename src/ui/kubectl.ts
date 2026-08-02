@@ -169,6 +169,7 @@ export const KINDS: readonly Kind[] = [
     title: 'Node',
     id: 'node',
     focus: 'node-0',
+    del: 'node',
     namespaced: false,
     columns: ['NAME', 'STATUS', 'ROLES', 'AGE'],
     wide: ['PODS', 'CPU-REQ', 'MEM-REQ'],
@@ -633,28 +634,6 @@ function del(p: Parsed, s: SimState): KubectlResult {
   const kind = findKind(p.args[1] ?? '')
   const name = p.args[2]
   if (!kind || !name) return err('usage: kubectl delete <kind> <name>')
-
-  if (kind.id === 'node') {
-    /* A Node is present when its index is below nodeCount, so the model can
-     * only remove the last machine in the grid — deleting it is decrementing
-     * nodeCount. Arbitrary-index removal would need the grid to re-pack. */
-    const present = s.nodes.filter((n) => n.present)
-    const last = present[present.length - 1]
-    if (!last) return err('no nodes to delete')
-    if (name !== last.name) {
-      return err(
-        `This model removes machines from the end of the grid, so only ${last.name} can be deleted right now. ` +
-          `Delete it, then the next, or use the Nodes knob.`,
-      )
-    }
-    return {
-      lines: [{ text: `node "${name}" deleted`, cls: 'ok' }],
-      intents: [
-        { kind: 'knob', key: 'nodeCount', value: present.length - 1 },
-        { kind: 'toast', text: `Removed ${name}. PodGC collects its pods; bring it back from the Nodes knob.`, level: 'info' },
-      ],
-    }
-  }
 
   if (!kind.del) {
     return err(`delete is not modelled for ${kind.title} in this city.`)

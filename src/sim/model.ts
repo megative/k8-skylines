@@ -34,7 +34,7 @@ import {
   type Taint,
 } from '../core/types'
 import { bus } from '../core/bus'
-import { Rng, clusterIp } from '../core/util'
+import { Rng, clamp, clusterIp } from '../core/util'
 import {
   MODEL,
   clampKnobs,
@@ -812,27 +812,63 @@ const MAX_SUBSTEP = 0.1
 /** Largest amount of model time one tick() call may advance. */
 const MAX_STEP = 2
 
+/**
+ * Bring the number of machines in the cluster to what `nodeCount` asks for.
+ *
+ * Scaling down takes the *last* present machine, because "I want fewer" names
+ * no particular one; deleting a Node by name is the other sentence and goes
+ * through `deleteClusterObject`. Scaling up brings back the lowest absent
+ * index, so a cluster that lost node-2 and is then grown gets node-2 again
+ * rather than a fifth machine.
+ */
+function applyNodeCount(ctx: SimCtx): void {
+  const nodes = ctx.s.nodes
+  let present = 0
+  for (const n of nodes) if (n.present) present += 1
+  const want = clamp(Math.round(ctx.s.knobs.nodeCount), 0, nodes.length)
+
+  while (present > want) {
+    for (let i = nodes.length - 1; i >= 0; i--) {
+      if (!nodes[i].present) continue
+      setNodePresent(nodes[i], false)
+      break
+    }
+    present -= 1
+  }
+  while (present < want) {
+    for (let i = 0; i < nodes.length; i++) {
+      if (nodes[i].present) continue
+      setNodePresent(nodes[i], true)
+      break
+    }
+    present += 1
+  }
+}
+
+/**
+ * Membership changed, so the Node object did too: one was deleted, or a kubelet
+ * registered a new one. `unschedulable` is the only thing that has to be
+ * dropped by hand — a cordon is written onto the object by an operator and
+ * nothing in the control plane ever clears it, so a cordon that outlived its
+ * Node would keep the scheduler off a machine nobody cordoned. Conditions and
+ * taints need no help: the kubelet and the node controller re-derive them
+ * within a tick. The image cache stays because the disk does. Pod bindings stay
+ * because they are PodGC's to settle.
+ */
+function setNodePresent(node: NodeState, present: boolean): void {
+  node.present = present
+  node.unschedulable = false
+}
+
 function stepOnce(ctx: SimCtx, dt: number): void {
   ctx.s.t += dt
 
-  /* Cluster membership, derived every tick rather than on knob change, so the
-   * flag can never drift from the knob whichever way the knob was set. */
-  for (let i = 0; i < ctx.s.nodes.length; i++) {
-    const present = i < ctx.s.knobs.nodeCount
-    const node = ctx.s.nodes[i]
-    if (node.present === present) continue
-    node.present = present
-    /*
-     * Membership changed, so the Node object did too: one was deleted, or a
-     * kubelet registered a new one. `unschedulable` is the only thing that has
-     * to be dropped by hand — a cordon is written onto the object by an
-     * operator and nothing in the control plane ever clears it, so a cordon
-     * that outlived its Node would keep the scheduler off a machine nobody
-     * cordoned. Conditions and taints need no help: the kubelet and the node
-     * controller re-derive them within a tick. The image cache stays because
-     * the disk does. Pod bindings stay because they are PodGC's to settle.
-     */
-    node.unschedulable = false
+  /* Cluster membership. The knob says how many machines there should be and is
+   * applied when it changes; which ones are present is state, because a Node
+   * can also be deleted by name and no count can say which. */
+  if (ctx.store.nodeCountApplied !== ctx.s.knobs.nodeCount) {
+    applyNodeCount(ctx)
+    ctx.store.nodeCountApplied = ctx.s.knobs.nodeCount
   }
 
   const pods = ctx.store.podList
@@ -960,6 +996,32 @@ function deleteClusterObject(ctx: SimCtx, kind: string, ns: string, name: string
         enqueueKey(c, 'deployment', key(r.namespace, r.ownerDeployment))
         enqueueKey(c, 'garbage-collector', 'cluster')
         emit(c, 'Normal', 'Deleted', `replicaset/${name}`, `Deleted replicaset ${name}`)
+      })
+      return true
+    }
+    case 'node': {
+      const node = s.nodes.find((x) => x.present && x.name === name)
+      if (!node) return false
+      submitDelete(ctx, 'Node', '', name, (c) => {
+        setNodePresent(node, false)
+        /*
+         * The knob is an intent about how many machines the cluster has, and
+         * deleting one changes that intent. Without this the next tick would
+         * see a count it has not applied, decide the cluster is short a
+         * machine, and register the deleted Node straight back.
+         */
+        c.s.knobs.nodeCount = Math.max(0, c.s.knobs.nodeCount - 1)
+        c.store.nodeCountApplied = c.s.knobs.nodeCount
+        /* The pods bound to it are orphaned, not evicted: nothing failed and
+         * there is no kubelet left to ask. PodGC settles them. */
+        enqueueKey(c, 'garbage-collector', 'cluster')
+        emit(
+          c,
+          'Normal',
+          'Deleted',
+          `node/${name}`,
+          `Deleted node ${name}; the pods bound to it are orphaned and removed by PodGC`,
+        )
       })
       return true
     }
