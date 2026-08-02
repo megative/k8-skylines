@@ -54,13 +54,6 @@ export interface BusEvents {
    * to be able to say. An empty `name` clears the selection.
    */
   inspect: { kind: string; namespace: string; name: string }
-  /**
-   * Change one field on one object, the way `kubectl edit` does. The simulation
-   * decides whether it lands: refusing is a normal answer and comes back as a
-   * toast carrying the reason, because meeting the mutable/immutable boundary
-   * is the lesson.
-   */
-  edit: { kind: string; namespace: string; name: string; path: string; value: string | number | boolean }
   /** Re-seed the whole cluster: the only way to bring deleted objects back,
    *  since this model has no `kubectl apply` yet. */
   reset: Record<string, never>

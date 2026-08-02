@@ -645,6 +645,12 @@ export function createPods(ctx: WorldCtx): WorldModule {
     }
     place(lot)
     lot.group.visible = true
+    /* Stamp the identity on the lot so the picker can name *this* pod rather
+     * than only "a Pod". Every mesh on the lot is a descendant, so a hit walks
+     * up to it — which is what a district can offer that an Explainer cannot,
+     * since an Explainer describes the mechanism and there is one of those. */
+    lot.group.userData.objectKind = 'pod'
+    lot.group.userData.objectUid = uid
     group.add(lot.group)
     lotByUid.set(uid, lot)
   }
@@ -652,6 +658,9 @@ export function createPods(ctx: WorldCtx): WorldModule {
   function release(lot: Lot): void {
     if (lot.uid !== null) lotByUid.delete(lot.uid)
     lot.uid = null
+    /* A freed lot must not still claim a pod, or the next click on it would
+     * name an object that has gone. */
+    lot.group.userData.objectUid = undefined
     lot.dying = 0
     lot.build = 0
     lot.group.visible = false

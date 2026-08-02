@@ -757,6 +757,11 @@ export function createNodes(ctx: WorldCtx): WorldModule {
     nodeAnchor(i, _pos)
     root.position.copy(_pos)
     root.name = `node-${i}`
+    /* Identity for the picker. A Node is cluster-scoped, so the namespace is
+     * empty by definition rather than unknown. The name is stamped per frame:
+     * which machine stands at a grid position changes when one is removed. */
+    root.userData.objectKind = 'node'
+    root.userData.objectNamespace = ''
     group.add(root)
 
     /* ---- deck and its status rim ---- */
@@ -1824,8 +1829,12 @@ export function createNodes(ctx: WorldCtx): WorldModule {
     /* A machine that is not in the cluster is not drawn at all. Dimming it or
      * marking it NotReady would say "this is broken"; it is simply not here. */
     for (let i = 0; i < parts.length; i++) {
-      const here = s.nodes[i] === undefined ? true : s.nodes[i].present
+      const n = s.nodes[i]
+      const here = n === undefined ? true : n.present
       if (parts[i].group.visible !== here) parts[i].group.visible = here
+      /* An empty name is not a gap: the picker falls back to the Explainer, so
+       * a block with no Node behind it still selects the mechanism. */
+      parts[i].group.userData.objectName = here && n ? n.name : ''
       if (here) updateNode(s, dt, parts[i])
     }
 

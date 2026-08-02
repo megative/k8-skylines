@@ -53,7 +53,14 @@ const _center = new THREE.Vector3()
 const _size = new THREE.Vector3()
 const _m4 = new THREE.Matrix4()
 
-export function createPicker(gfx: Gfx, registry: Registry, bus: Bus, dom: HTMLElement): Picker {
+/**
+ * Turns the uid a district stamped on its geometry into the object's address.
+ * The picker deliberately cannot do this itself: resolving a uid means reading
+ * SimState, and `src/engine` has no business holding the model.
+ */
+export type ObjectResolver = (kind: string, uid: string) => { namespace: string; name: string } | undefined
+
+export function createPicker(gfx: Gfx, registry: Registry, bus: Bus, dom: HTMLElement, resolveObject?: ObjectResolver): Picker {
   const raycaster = new THREE.Raycaster()
   /* Defaults are tuned for unit-scale scenes; this city is ~1800 metres across
    * and a 1-metre line threshold would let grid lines swallow every click. */
@@ -103,6 +110,11 @@ export function createPicker(gfx: Gfx, registry: Registry, bus: Bus, dom: HTMLEl
 
   /* Set by pick(): the picker has no allocation budget for a result object. */
   let hitEntryId = ''
+  /* The concrete object under the cursor, when a district stamped one. */
+  let hitObjectKind = ''
+  let hitObjectUid = ''
+  let hitObjectName = ''
+  let hitObjectNamespace = ''
   let hitObject: THREE.Object3D | null = null
   let hitInstance = -1
 
@@ -158,6 +170,27 @@ export function createPicker(gfx: Gfx, registry: Registry, bus: Bus, dom: HTMLEl
       const entry = registry.resolve(o)
       if (!entry) continue
       hitEntryId = entry.id
+      hitObjectKind = ''
+      hitObjectUid = ''
+      hitObjectName = ''
+      hitObjectNamespace = ''
+      /* A district stamps either a uid, which only the model can resolve, or an
+       * address it already knows. Either names one object; neither is guessed. */
+      for (let a: THREE.Object3D | null = o; a; a = a.parent) {
+        const uid = a.userData.objectUid
+        const nm = a.userData.objectName
+        if (typeof uid === 'string' && uid) {
+          hitObjectKind = String(a.userData.objectKind ?? '')
+          hitObjectUid = uid
+          break
+        }
+        if (typeof nm === 'string' && nm) {
+          hitObjectKind = String(a.userData.objectKind ?? '')
+          hitObjectName = nm
+          hitObjectNamespace = String(a.userData.objectNamespace ?? '')
+          break
+        }
+      }
       hitObject = o
       hitInstance = h.instanceId === undefined ? -1 : h.instanceId
       return true
@@ -226,13 +259,26 @@ export function createPicker(gfx: Gfx, registry: Registry, bus: Bus, dom: HTMLEl
     return top === dom || top === null
   }
 
+  /* Both intents, always in this order: `inspect` says which object, `focus`
+   * says which mechanism it is an instance of. A surface that emits only one of
+   * them puts the three views out of step about what is selected. */
+  function announce(): void {
+    const ref = hitObjectName
+      ? { namespace: hitObjectNamespace, name: hitObjectName }
+      : hitObjectUid && resolveObject
+        ? resolveObject(hitObjectKind, hitObjectUid)
+        : undefined
+    bus.emit('inspect', ref ? { kind: hitObjectKind, ...ref } : { kind: '', namespace: '', name: '' })
+    bus.emit('focus', { id: hitEntryId, source: 'click' })
+  }
+
   function select(): void {
-    if (pickAtPointer()) bus.emit('focus', { id: hitEntryId, source: 'click' })
+    if (pickAtPointer()) announce()
     else bus.emit('blur', {})
   }
 
   function openMenu(): void {
-    if (pickAtPointer()) bus.emit('focus', { id: hitEntryId, source: 'click' })
+    if (pickAtPointer()) announce()
     /* The context menu is DOM and needs a screen position. The bus carries no
      * coordinates, so they are published as custom properties on the root. */
     const root = document.documentElement

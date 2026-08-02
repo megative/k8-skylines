@@ -427,7 +427,9 @@ export function createPlan(bus: Bus): Plan {
       if (hit.dataset.name) {
         bus.emit('inspect', { kind: hit.dataset.id, namespace: hit.dataset.ns ?? '', name: hit.dataset.name })
       }
-      bus.emit('focus', { id: hit.dataset.id, source: 'menu' })
+      /* 'click' is what tells the inspector this focus arrived with an object;
+       * any other source means a mechanism was named on its own. */
+      bus.emit('focus', { id: hit.dataset.id, source: 'click' })
     }
   }
   host.addEventListener('click', onClick)
@@ -448,7 +450,12 @@ export function createPlan(bus: Bus): Plan {
     const hit = t.closest('.pl-box, .pl-pod')
     if (hit instanceof SVGElement && hit.dataset.id) {
       ev.preventDefault()
-      bus.emit('focus', { id: hit.dataset.id, source: 'menu' })
+      /* The same pair the pointer path emits: keyboard selection must not
+       * select less than a click on the same card. */
+      if (hit.dataset.name) {
+        bus.emit('inspect', { kind: hit.dataset.id, namespace: hit.dataset.ns ?? '', name: hit.dataset.name })
+      }
+      bus.emit('focus', { id: hit.dataset.id, source: 'click' })
     }
   }
   host.addEventListener('keydown', onKey)

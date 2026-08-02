@@ -130,14 +130,16 @@ function main(): void {
 
   const rig = createCameraRig(gfx, canvas, bus)
   const labels = createLabels(gfx, registry, document.getElementById('labels')!)
-  const picker = createPicker(gfx, registry, bus, canvas)
+  const picker = createPicker(gfx, registry, bus, canvas, (kind, uid) => {
+    /* Only pods stamp a uid today; other districts can join by doing the same. */
+    if (kind !== 'pod') return undefined
+    const p = sim.state.pods.get(uid)
+    return p ? { namespace: p.namespace, name: p.name } : undefined
+  })
 
   const hud = createHud(bus)
   const controls = createControls(bus, sim.state.knobs)
-  const panel = createPanel(bus, registry, {
-    editableFields: (k) => sim.editableFields(k),
-    readField: (k, ns, n, p) => sim.readField(k, ns, n, p),
-  })
+  const panel = createPanel(bus, registry)
   createSearch(bus, registry)
   createConsole(bus, registry, sim)
   createHelp(bus)
@@ -147,10 +149,7 @@ function main(): void {
   const trace = createTrace(gfx)
   createPathReader(bus)
   const plan = createPlan(bus)
-  const tree = createTree(bus, registry, {
-    editableFields: (k) => sim.editableFields(k),
-    readField: (k, ns, n, p) => sim.readField(k, ns, n, p),
-  })
+  const tree = createTree(bus, registry)
 
   /* The UI never mutates the model. It emits intents; the simulation decides. */
   /*
@@ -187,13 +186,6 @@ function main(): void {
     const r = sim.applyObject(kind, name)
     if (r === 'unknown') bus.emit('toast', { text: `no predefined ${kind} "${name}"`, kind: 'warn' })
     else if (r === 'created') bus.emit('toast', { text: `Created ${kind}/${name}`, kind: 'info' })
-  })
-  bus.on('edit', ({ kind, namespace, name, path, value }) => {
-    const r = sim.editObject(kind, namespace, name, path, value)
-    /* Every outcome is worth saying out loud. A refusal that looks like nothing
-     * happening is the one thing this feature must never do. */
-    const level = r.outcome === 'applied' ? 'info' : r.outcome === 'unchanged' ? 'info' : 'warn'
-    bus.emit('toast', { text: r.message, kind: level })
   })
   bus.on('reset', () => {
     sim.reset()

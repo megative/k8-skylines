@@ -554,6 +554,12 @@ export function createNetwork(ctx: WorldCtx): WorldModule {
   const IX = ANCHOR.ingress[0]
   const IZ = ANCHOR.ingress[2]
   const ingressGroup = new THREE.Group()
+  /* Identity for the picker, so a click names *this* Ingress rather than the
+   * mechanism. Districts opt in by stamping; the picker only walks up to find
+   * it and never guesses. */
+  ingressGroup.userData.objectKind = 'net.ingress'
+  ingressGroup.userData.objectName = 'shop'
+  ingressGroup.userData.objectNamespace = 'shop'
   group.add(ingressGroup)
 
   const ingressPad = part(BOX, 'deck', ingressGroup, IX, 1.5, IZ, 150, 3, 76)
@@ -1342,6 +1348,11 @@ export function createNetwork(ctx: WorldCtx): WorldModule {
       }
 
       const svc = inSlot
+      /* The row is addressed by slot, and which Service stands in a slot is
+       * decided per frame, so the stamp is refreshed with it. */
+      slot.group.userData.objectKind = 'net.service'
+      slot.group.userData.objectName = svc.name
+      slot.group.userData.objectNamespace = svc.namespace
       const headless = svc.type === 'Headless'
       const ready = readyEndpoints(svc)
       const dead = !headless && ready === 0

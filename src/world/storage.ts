@@ -361,6 +361,7 @@ export function createStorage(ctx: WorldCtx): WorldModule {
     rod.visible = false
 
     root.name = `pvc-ticket-${i}`
+    root.userData.objectKind = 'storage.pvc'
     rod.name = `pvc-coupling-${i}`
     hook.name = `pvc-hook-${i}`
     tickets.push({ root, card, lamp, hook, rod })
@@ -426,6 +427,10 @@ export function createStorage(ctx: WorldCtx): WorldModule {
     refuse.visible = false
 
     root.name = `pv-tank-${i}`
+    /* A PersistentVolume is cluster-scoped; the name is stamped per frame
+     * because a tank is a slot in a pool, not a fixed volume. */
+    root.userData.objectKind = 'storage.pv'
+    root.userData.objectNamespace = ''
     refuse.name = `pv-refused-${i}`
     for (let k = 0; k < 3; k++) sockets[k].name = `pv-socket-${i}-${k}`
     tanks.push({ root, barrel, band, collar, sockets, lock, nodePips, refuse, mast })
@@ -1098,6 +1103,7 @@ export function createStorage(ctx: WorldCtx): WorldModule {
       const tk = tanks[i]
       const pv: PvState | undefined = s.pvs[i]
       tk.root.visible = pv !== undefined
+      tk.root.userData.objectName = pv ? pv.name : ''
       if (!pv) continue
 
       const full = TANK_BASE_H + pv.capacityGib * TANK_H_PER_GIB
@@ -1165,6 +1171,8 @@ export function createStorage(ctx: WorldCtx): WorldModule {
       const tc = tickets[i]
       const pvc: PvcState | undefined = pvcOf(s, i)
       tc.root.visible = pvc !== undefined
+      tc.root.userData.objectName = pvc ? pvc.name : ''
+      tc.root.userData.objectNamespace = pvc ? pvc.namespace : ''
       if (!pvc) continue
 
       const bi = pvc.phase === 'Bound' ? pvIndex(s, pvc.boundPv) : -1

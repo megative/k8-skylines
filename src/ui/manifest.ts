@@ -274,7 +274,10 @@ function ingressManifest(s: SimState): string | undefined {
     metadata: { name: i.name, namespace: i.namespace },
     spec: {
       ingressClassName: i.className,
-      tls: i.tls ? [{ hosts: i.rules.map((r) => r.host) }] : [],
+      /* One entry per *hostname*, not per rule: two paths on the same host are
+       * still one certificate. Mapping rules straight across printed
+       * shop.example.com twice. */
+      tls: i.tls ? [{ hosts: [...new Set(i.rules.map((r) => r.host))] }] : [],
       rules: i.rules.map((r) => ({
         host: r.host,
         http: {
@@ -436,6 +439,7 @@ function ingressByRef(i: SimState['ingresses'][number]): string {
     metadata: { name: i.name, namespace: i.namespace },
     spec: {
       ingressClassName: i.className,
+      tls: i.tls ? [{ hosts: [...new Set(i.rules.map((r) => r.host))] }] : [],
       rules: i.rules.map((r) => ({
         host: r.host,
         http: { paths: [{ path: r.path, pathType: 'Prefix', backend: { service: { name: r.service, port: { number: r.port } } } }] },

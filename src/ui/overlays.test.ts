@@ -459,6 +459,46 @@ describe('inspector', () => {
     panel.dispose()
   })
 
+  /*
+   * One click emits a pair: `inspect` names the object, `focus` names the
+   * mechanism that click landed on. The two ids live in different namespaces —
+   * a kind id (`pod`) against an Explainer id (`pod.qos`) — and the panel used
+   * to require them to be equal before it would believe the object. They happen
+   * to coincide for a pod lot and a Service slot, so identity looked correct
+   * while every other click silently fell back to a representative under a
+   * header that named one specific object.
+   */
+  it('keeps the clicked object when the mechanism id is not the kind id', () => {
+    const bus = new Bus()
+    const registry = new Registry()
+    registry.register(entry)
+    const panel = createPanel(bus, registry)
+
+    bus.emit('inspect', { kind: 'pod', namespace: 'shop', name: 'web-7d9f4' })
+    bus.emit('focus', { id: 'pod.qos', source: 'click' })
+
+    expect(query(hosts.panel, 'pnl-title')[0].textContent).toBe('web-7d9f4')
+    expect(query(hosts.panel, 'pnl-kube')[0].textContent).toContain('shop')
+    panel.dispose()
+  })
+
+  it('drops the object when a mechanism is reached without a click', () => {
+    const bus = new Bus()
+    const registry = new Registry()
+    registry.register(entry)
+    const panel = createPanel(bus, registry)
+
+    bus.emit('inspect', { kind: 'pod', namespace: 'shop', name: 'web-7d9f4' })
+    bus.emit('focus', { id: 'pod.qos', source: 'click' })
+    expect(query(hosts.panel, 'pnl-title')[0].textContent).toBe('web-7d9f4')
+
+    /* Search names a mechanism and nothing else. Carrying the last click's pod
+     * into it would caption a general lesson with one arbitrary object. */
+    bus.emit('focus', { id: 'pod.qos', source: 'search' })
+    expect(query(hosts.panel, 'pnl-title')[0].textContent).toBe('QoS class')
+    panel.dispose()
+  })
+
   it('renders live metrics and closes on blur', () => {
     const bus = new Bus()
     const registry = new Registry()
