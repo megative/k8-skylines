@@ -162,11 +162,43 @@ export function createPicker(gfx: Gfx, registry: Registry, bus: Bus, dom: HTMLEl
     raycaster.setFromCamera(_ndc, gfx.camera)
     hits.length = 0
     raycaster.intersectObject(gfx.scene, true, hits)
+    /*
+     * Two passes, because the nearest surface is not always the one the reader
+     * is pointing at. The city has 485 pickable surfaces below full opacity,
+     * and a film at alpha 0.10 is invisible while still being the first thing a
+     * ray meets — so a click meant for the building landed on the pane in front
+     * of it. Worst of all for ghosts: desired state is drawn see-through
+     * precisely so the actual state behind it can be read, and it was
+     * intercepting the clicks aimed at what it is transparent for.
+     *
+     * So solid surfaces win, and a faint one is only taken when nothing solid
+     * is behind it — a ghost alone in the ray is still selectable.
+     */
+    for (let pass = 0; pass < 2; pass++) {
+      if (pickPass(pass === 0)) return true
+    }
+    return false
+  }
+
+  /** Alpha at which a surface stops being scenery you can see through. */
+  const SOLID_ALPHA = 0.35
+
+  function opaqueEnough(o: THREE.Object3D): boolean {
+    const m = (o as THREE.Mesh).material
+    if (!m) return true
+    const one = Array.isArray(m) ? m[0] : m
+    const mat = one as THREE.Material & { opacity?: number }
+    if (!mat || !mat.transparent) return true
+    return (mat.opacity ?? 1) >= SOLID_ALPHA
+  }
+
+  function pickPass(solidOnly: boolean): boolean {
     for (let i = 0; i < hits.length; i++) {
       const h = hits[i]
       const o = h.object
       if (o === highlight) continue
       if (o.userData.nopick) continue
+      if (solidOnly && !opaqueEnough(o)) continue
       const entry = registry.resolve(o)
       if (!entry) continue
       hitEntryId = entry.id
