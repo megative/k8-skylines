@@ -233,6 +233,19 @@ const _right = new THREE.Vector3()
 const _upv = new THREE.Vector3()
 const _box = new THREE.Box3()
 const _sphere = new THREE.Sphere()
+const _frustum = new THREE.Frustum()
+const _pm = new THREE.Matrix4()
+
+/**
+ * How much of the viewport's height a thing has to cover before selecting it
+ * is allowed to leave the camera where it is.
+ *
+ * Below this it is a speck and the reader needs to be taken to it; above it
+ * they are already looking at the thing they clicked, and moving would throw
+ * away the view they built. Roughly a fifteenth of the screen — enough to see
+ * a pod's lot, not enough to read the writing on it.
+ */
+const READABLE_FRACTION = 0.07
 const _euler = new THREE.Euler(0, 0, 0, 'YXZ')
 
 interface Pose {
@@ -531,8 +544,39 @@ export function createCameraRig(gfx: Gfx, dom: HTMLElement, bus: Bus): CameraRig
      * Selecting a pause container should move you close enough to read it and
      * no closer than you can still tell which node you are standing on.
      */
+    /*
+     * Selecting something you are already looking at must not move the camera.
+     *
+     * Home is 1180 metres out and the closest a focus may land is 58, so one
+     * click could throw the reader twenty times closer in a single move — into
+     * a gap between buildings, with every landmark they had been navigating by
+     * out of frame. That is the whole of "you click and end up somewhere
+     * unrecognisable", and it fired even when the thing clicked was already
+     * large and centred, which is the most common case of all: you look at a
+     * node, you click that node.
+     *
+     * So the flight is for fetching something you cannot see. If it is on
+     * screen and big enough to look at, the view the reader built stands.
+     */
+    if (isReadable(cx, cy, cz, radius)) return
     const fitted = framingDistance(radius, FOV[mode], camera.aspect, padding)
     frameAt(cx, cy, cz, clamp(fitted, MIN_FOCUS_DIST, MAX_FOCUS_DIST))
+  }
+
+  /** On screen, and covering enough of it to be worth looking at from here. */
+  function isReadable(cx: number, cy: number, cz: number, radius: number): boolean {
+    /* A flight already under way is the reader being taken somewhere; judging
+     * against the pose it is passing through would strand them mid-air. */
+    if (focusActive) return false
+    camera.updateMatrixWorld()
+    _pm.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+    _frustum.setFromProjectionMatrix(_pm)
+    _v.set(cx, cy, cz)
+    if (!_frustum.containsPoint(_v)) return false
+    const dist = camera.position.distanceTo(_v)
+    if (dist <= radius) return false
+    const fov = (camera.fov * Math.PI) / 180
+    return (2 * Math.atan(radius / dist)) / fov >= READABLE_FRACTION
   }
 
   function focusPoint(p: THREE.Vector3, distance?: number): void {
