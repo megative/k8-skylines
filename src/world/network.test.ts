@@ -6,6 +6,7 @@ import { materialCount } from '../core/theme'
 import { DEFAULT_KNOBS, N_NODES } from '../core/types'
 import type { EndpointSliceEntry, ServiceState, SimState } from '../core/types'
 import { Rng } from '../core/util'
+import { serviceRowSlot } from './layout'
 import { createNetwork } from './network'
 
 function endpoint(i: number, ready: boolean, serving = true): EndpointSliceEntry {
@@ -145,12 +146,19 @@ describe('network district', () => {
      * endpoint must be black. */
     const col = strandColors(m.group)
     const TARGETS = N_NODES + 1
+    /* A Service's strands live in its row slot, which is its position in
+     * SERVICE_ROW_ORDER — not its index in the seed array. Those stopped being
+     * the same thing when the row was ordered by proximity to its door. */
+    const slot = serviceRowSlot('db')
+    expect(slot).toBeGreaterThanOrEqual(0)
+    const MAX_EP = 6
     for (let p = 0; p < 2; p++) {
+      const base = (slot * MAX_EP + p) * TARGETS
       for (let t = 0; t < N_NODES; t++) {
-        const seg = (p * TARGETS + t) * 6
+        const seg = (base + t) * 6
         expect(col[seg] + col[seg + 1] + col[seg + 2]).toBe(0)
       }
-      const dnsSeg = (p * TARGETS + N_NODES) * 6
+      const dnsSeg = (base + N_NODES) * 6
       expect(col[dnsSeg] + col[dnsSeg + 1] + col[dnsSeg + 2]).toBeGreaterThan(0)
     }
   })

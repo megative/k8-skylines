@@ -99,20 +99,51 @@ describe('kubectl: reading the model', () => {
 })
 
 describe('kubectl: changing the model', () => {
-  it('scale deployment/web maps to the replicas knob', () => {
+  it('scale patches spec.replicas through the edit path, not the knob', () => {
     const { env } = envAt(30)
     const r = runKubectl('scale deployment/web --replicas=5', env)
-    expect(r.intents).toContainEqual({ kind: 'knob', key: 'replicas', value: 5 })
+    /* The knob had no API pipeline behind it. Going through `edit` is what
+     * makes a scale a real write — refusable, and impossible without quorum. */
+    expect(r.intents).toContainEqual({
+      kind: 'edit',
+      resource: 'deployment',
+      namespace: 'shop',
+      name: 'web',
+      path: 'spec.replicas',
+      value: 5,
+    })
     expect(r.lines.some((l) => l.text.includes('scaled'))).toBe(true)
   })
 
-  it('refuses to scale a Deployment the model does not make adjustable', () => {
+  it('scales any Deployment that exists, not only the demo one', () => {
     const { env, sim } = envAt(30)
     const other = sim.state.deployments.find((d) => d.name !== 'web')
     if (!other) return
     const r = runKubectl(`scale deployment/${other.name} --replicas=2`, env)
-    expect(r.intents).toEqual([])
-    expect(r.lines[0].cls).toBe('err')
+    /* The old restriction to deployment/web was an artefact of routing scale
+     * through a single knob; nothing about the cluster required it. */
+    expect(r.intents.some((i) => i.kind === 'edit' && i.name === other.name)).toBe(true)
+    expect(r.lines[0].cls).not.toBe('err')
+  })
+
+  it('cordon and uncordon patch spec.unschedulable on a real node', () => {
+    const { env, sim } = envAt(30)
+    const node = sim.state.nodes.find((n) => n.present)!
+    const on = runKubectl(`cordon ${node.name}`, env)
+    expect(on.intents).toContainEqual({
+      kind: 'edit',
+      resource: 'node',
+      namespace: '',
+      name: node.name,
+      path: 'spec.unschedulable',
+      value: true,
+    })
+    /* The distinction that makes cordon worth a command of its own. */
+    expect(on.lines.some((l) => l.text.includes('not drain'))).toBe(true)
+
+    const off = runKubectl(`uncordon ${node.name}`, env)
+    expect(off.intents.some((i) => i.kind === 'edit' && i.value === false)).toBe(true)
+    expect(runKubectl('cordon no-such-node', env).lines[0].cls).toBe('err')
   })
 
   it('really deletes a standalone resource, resolving its namespace', () => {

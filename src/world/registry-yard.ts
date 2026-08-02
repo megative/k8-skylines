@@ -122,8 +122,19 @@ function bayX(i: number): number {
 function bayZ(i: number): number {
   return BAY_ROW_Z[i < BAY_COLS ? 0 : 1]
 }
+/*
+ * A bay's height is its layer's size, and that is the whole point of the yard:
+ * a base layer is a tower and an application layer is a kerb, which is why
+ * rebuilding the top layer is cheap and changing the base is not.
+ *
+ * The vertical exaggeration is stronger than it was. At 0.1 the tallest bay
+ * reached 27 on a city plate over a thousand across, so the size difference the
+ * yard exists to show was invisible from anywhere but on foot. Scaling it is the
+ * same deliberate choice the model makes everywhere else — the ratios between
+ * layers are untouched, only the multiplier.
+ */
 function bayHeight(i: number): number {
-  return 2 + LAYER_MIB[i] * 0.1
+  return 3 + LAYER_MIB[i] * 0.3
 }
 
 type Mats = ReturnType<typeof buildMats>

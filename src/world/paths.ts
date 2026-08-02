@@ -153,7 +153,7 @@ export const PATHS: readonly FlowPath[] = [
           'A Service is not a process. It is a stable virtual IP whose EndpointSlice lists only the pods that pass their readiness probe.',
       },
       {
-        route: 'svc-web-to-nodes',
+        route: 'svc-web-to-node-0',
         focus: 'net.clusterip-rule-table',
         title: 'Rule tables on every node do the work',
         detail:

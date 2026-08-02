@@ -86,6 +86,30 @@ question a reader actually has.
   The claim is right — one virtual IP, rules on every node — but drawn all at
   once it reads as noise. It should follow the selection.
 
+- **The flat plan should show the whole cluster, traffic included.** It draws the
+  control plane, the nodes, the Services and the edge, but not the flows: no
+  request moving from a door to a pod, no watch, no raft. A reader who opens it
+  to answer "where is the traffic going" cannot. Everything the city animates
+  should have a flat counterpart, and everything the model holds should appear
+  somewhere on it rather than only in the console.
+
+- **Name every card in the plan.** Node cards carry their name; pods are bare
+  chips. A chip whose only information is its colour cannot be talked about, and
+  the tree proves the names fit.
+
+- **Let the reader size the cards.** The node block height is fixed, so a node
+  with two pods wastes the same space as one with twelve, and a busy cluster
+  overflows the block. It should be adjustable, and the plan should stay readable
+  at either end.
+
+- **Edit the mutable fields and have the cluster react.** The inspector shows a
+  manifest and a fixed set of knobs. What it cannot do is what `kubectl edit`
+  does: change a field that is genuinely mutable — replicas, the image, requests
+  and limits, labels, a toleration — and let the model take the consequences.
+  That would make the difference between mutable and immutable fields something
+  a reader discovers by trying, which is how they learn it in a real cluster.
+  Fields the API would reject must refuse here too, and say why.
+
 ## Known limitations
 
 - The node grid is four blocks. Topology spread, zones, and rack awareness have

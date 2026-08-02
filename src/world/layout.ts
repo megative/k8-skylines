@@ -369,10 +369,46 @@ export type RouteId =
   | 'external-to-ingress'
   | 'ingress-to-svc-web'
   | 'ingress-to-svc-api'
-  | 'svc-web-to-nodes'
-  | 'svc-api-to-nodes'
   | 'lb-to-svc'
-  | 'svc-lb-to-nodes'
+  | ServiceLegId
+  | EastWestId
+
+/**
+ * A Service's leg down to one specific node.
+ *
+ * One route per (service, node) instead of one route per service. The geometry
+ * stays static and the *rate* carries the truth: a leg to a node holding no
+ * ready endpoint of that Service runs at zero, so nothing is ever drawn flying
+ * at a machine that is running none of its pods. kube-proxy picks uniformly
+ * among ready endpoints, so the rates split the same way.
+ */
+export type ServiceLegKey = 'web' | 'api' | 'lb'
+export type ServiceLegId = `svc-${ServiceLegKey}-to-node-${number}`
+
+export function serviceLeg(key: ServiceLegKey, node: number): ServiceLegId {
+  return `svc-${key}-to-node-${node}`
+}
+
+/**
+ * East-west: one lane per (source node, destination node).
+ *
+ * This is the shape a Headless Service actually produces, and it is not the
+ * shape of the other traffic routes. `db` has clusterIP: None, so there is no
+ * virtual address to fly into and kube-proxy programmes no rule for it: the
+ * client resolves the name, gets pod IPs back, and connects straight to one.
+ * Drawing it as "into the Service hologram and down" — the way `web` and `api`
+ * are drawn — would invent a hop that does not exist.
+ *
+ * So the lane runs deck to deck, over the CNI, between the machines the two
+ * pods happen to be on. A lane whose source node runs no client, or whose
+ * destination node runs no server, carries nothing. The diagonal case where both
+ * are the same node is real and common — that traffic never leaves the machine.
+ */
+export type EastWestId = `ew-api-to-db-${number}-${number}`
+
+export function eastWestLane(from: number, to: number): EastWestId {
+  return `ew-api-to-db-${from}-${to}`
+}
 
 /**
  * The Service row: one hologram slot per Service, floating above the corridor
@@ -383,6 +419,35 @@ export type RouteId =
  */
 export const SERVICE_ROW = { y: 116, z: 300, pitch: 104, slots: 6 } as const
 
+/**
+ * Left-to-right order of the Service row.
+ *
+ * A slot used to be a Service's index in the seed array, which meant its
+ * position carried no information at all — and then said something false anyway,
+ * because `web-lb` landed at the far right while its LoadBalancer pylon stands at
+ * x = 0, so the traffic was drawn shooting diagonally into a corner and coming
+ * back. Position now means proximity to the door that reaches it: the externally
+ * reachable Services sit near the middle, where the Ingress and the pylon are,
+ * and the cluster-internal ones sit out at the flanks.
+ *
+ * A name missing from this list falls back to the end of the row rather than
+ * disappearing, so adding a Service to the seed can never blank a slot.
+ */
+export const SERVICE_ROW_ORDER: readonly string[] = [
+  'kubernetes',
+  'kube-dns',
+  'web',
+  'web-lb',
+  'api',
+  'db',
+]
+
+/** Slot for a Service name, or -1 when the row has no room for it. */
+export function serviceRowSlot(name: string): number {
+  const i = SERVICE_ROW_ORDER.indexOf(name)
+  return i >= 0 && i < SERVICE_ROW.slots ? i : -1
+}
+
 /** World position of Service slot `i`. */
 export function serviceSlotPos(i: number, out = new THREE.Vector3()): THREE.Vector3 {
   return out.set((i - (SERVICE_ROW.slots - 1) / 2) * SERVICE_ROW.pitch, SERVICE_ROW.y, SERVICE_ROW.z)
@@ -390,6 +455,15 @@ export function serviceSlotPos(i: number, out = new THREE.Vector3()): THREE.Vect
 
 /** Slot x only, for the static route tables below. */
 const svcX = (i: number): number => (i - (SERVICE_ROW.slots - 1) / 2) * SERVICE_ROW.pitch
+
+/*
+ * A route must name the Service it reaches, never the slot number it happens to
+ * stand in today. Writing the number worked until the row was reordered, and
+ * then the LoadBalancer's traffic was drawn arriving at the database and the
+ * Ingress's /api path at the LoadBalancer — geometry quietly claiming a
+ * connection the cluster does not have.
+ */
+const svcXOf = (name: string): number => svcX(serviceRowSlot(name))
 
 export interface RouteDef {
   id: RouteId
@@ -401,7 +475,7 @@ export interface RouteDef {
 
 const A = ANCHOR
 
-export const ROUTES: readonly RouteDef[] = [
+const BASE_ROUTES: readonly RouteDef[] = [
   {
     id: 'client-to-api',
     kind: 'request',
@@ -469,43 +543,99 @@ export const ROUTES: readonly RouteDef[] = [
   {
     id: 'ingress-to-svc-web',
     kind: 'traffic',
-    points: [A.ingress, [svcX(2) * 0.5, 54, CITY.edge.z - 50], [svcX(2), SERVICE_ROW.y, SERVICE_ROW.z]],
+    points: [A.ingress, [svcXOf('web') * 0.5, 54, CITY.edge.z - 50], [svcXOf('web'), SERVICE_ROW.y, SERVICE_ROW.z]],
   },
   {
     id: 'ingress-to-svc-api',
     kind: 'traffic',
-    points: [A.ingress, [svcX(3) * 0.5, 54, CITY.edge.z - 50], [svcX(3), SERVICE_ROW.y, SERVICE_ROW.z]],
+    points: [A.ingress, [svcXOf('api') * 0.5, 54, CITY.edge.z - 50], [svcXOf('api'), SERVICE_ROW.y, SERVICE_ROW.z]],
   },
-  /* Down from the virtual IP into the node grid, where kube-proxy's rules on
-   * each node do the actual rewrite to a pod IP. */
-  {
-    id: 'svc-web-to-nodes',
-    kind: 'traffic',
-    points: [[svcX(2), SERVICE_ROW.y, SERVICE_ROW.z], [svcX(2) * 0.7, 58, 240], [-CITY.node.pitch / 2, 8, CITY.node.z]],
-  },
-  {
-    id: 'svc-api-to-nodes',
-    kind: 'traffic',
-    points: [[svcX(3), SERVICE_ROW.y, SERVICE_ROW.z], [svcX(3) * 0.7, 58, 240], [CITY.node.pitch / 2, 8, CITY.node.z]],
-  },
+
   /* The L4 door: its own external address, its own Service, and it never touches
    * the Ingress. Drawing both doors as one line was the other half of the lie. */
   {
     id: 'lb-to-svc',
     kind: 'traffic',
-    points: [A.loadBalancer, [svcX(5) * 0.6, 60, CITY.edge.z - 30], [svcX(5), SERVICE_ROW.y, SERVICE_ROW.z]],
+    points: [A.loadBalancer, [svcXOf('web-lb') * 0.6, 60, CITY.edge.z - 30], [svcXOf('web-lb'), SERVICE_ROW.y, SERVICE_ROW.z]],
   },
-  {
-    id: 'svc-lb-to-nodes',
-    kind: 'traffic',
-    points: [[svcX(5), SERVICE_ROW.y, SERVICE_ROW.z], [svcX(5) * 0.7, 58, 240], [CITY.node.pitch * 1.5, 8, CITY.node.z]],
-  },
+
   {
     id: 'external-to-ingress',
     kind: 'traffic',
-    points: [A.externalClients, A.loadBalancer, A.ingress],
+    /* Straight to the Ingress, not via the LoadBalancer pylon. Routing it
+     * through the pylon drew the L7 path as if it passed through the L4
+     * Service, and the whole point of having two doors is that it does not:
+     * they are different addresses and either can be deleted alone. */
+    points: [A.externalClients, [0, 8, CITY.edge.z + 44], A.ingress],
   },
 ] as const
+
+/*
+ * The Service legs, one per node.
+ *
+ * Generated rather than written out, because the honest count is services times
+ * machines and hand-listing it drifts the moment N_NODES changes. Each leg drops
+ * from its Service's hologram to one node's deck; whether anything travels it is
+ * the flow engine's business, and it asks the EndpointSlice.
+ */
+/* Derived, never repeated: the legs must leave from the same slot the hologram
+ * stands in, or the drawing contradicts itself. */
+const SERVICE_LEG_SLOT: Record<ServiceLegKey, number> = {
+  web: serviceRowSlot('web'),
+  api: serviceRowSlot('api'),
+  lb: serviceRowSlot('web-lb'),
+}
+
+const SERVICE_LEGS: RouteDef[] = []
+for (const key of ['web', 'api', 'lb'] as const) {
+  const sx = svcX(SERVICE_LEG_SLOT[key])
+  for (let n = 0; n < N_NODES; n++) {
+    const nx = (n - (N_NODES - 1) / 2) * CITY.node.pitch
+    SERVICE_LEGS.push({
+      id: serviceLeg(key, n),
+      kind: 'traffic',
+      /* Out of the virtual IP, across, then down onto the node that holds the
+       * endpoint. The middle point keeps the legs from bunching into one line. */
+      points: [
+        [sx, SERVICE_ROW.y, SERVICE_ROW.z],
+        [(sx + nx) / 2, 58, 236],
+        [nx, 8, CITY.node.z],
+      ],
+    })
+  }
+}
+
+/* Pod-to-pod lanes, generated for the same reason the Service legs are: the
+ * honest count is machines squared, and a hand-written list drifts. */
+const EW_Y = 12
+const EW_Z = 196
+const EAST_WEST_LANES: RouteDef[] = []
+for (let a = 0; a < N_NODES; a++) {
+  for (let b = 0; b < N_NODES; b++) {
+    const ax = (a - (N_NODES - 1) / 2) * CITY.node.pitch
+    const bx = (b - (N_NODES - 1) / 2) * CITY.node.pitch
+    EAST_WEST_LANES.push({
+      id: eastWestLane(a, b),
+      kind: 'traffic',
+      points:
+        a === b
+          ? /* Same machine: the packet never touches the network between nodes. */
+            [
+              [ax - 22, EW_Y, EW_Z],
+              [ax, EW_Y + 13, EW_Z + 9],
+              [ax + 22, EW_Y, EW_Z],
+            ]
+          : [
+              [ax, EW_Y, EW_Z],
+              [(ax + bx) / 2, EW_Y + 20, EW_Z + 14],
+              [bx, EW_Y, EW_Z],
+            ],
+    })
+  }
+}
+
+/** Every route in the city: base geometry, Service legs, east-west lanes. */
+export const ROUTES: readonly RouteDef[] = [...BASE_ROUTES, ...SERVICE_LEGS, ...EAST_WEST_LANES]
 
 const ROUTE_BY_ID = new Map<RouteId, RouteDef>(ROUTES.map((r) => [r.id, r]))
 

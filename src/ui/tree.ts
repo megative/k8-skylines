@@ -3,7 +3,8 @@ import type { Registry } from '../core/registry'
 import type { SimState } from '../core/types'
 import { docsFor } from './docs-map'
 import { KINDS, type Kind, type Row } from './kubectl'
-import { podManifestByRef } from './manifest'
+import { manifestByRef } from './manifest'
+import { diffManifest, scalar } from './yaml-edit'
 
 /* ============================================================================
  * THE RESOURCE TREE — the cluster as a browsable list.
@@ -47,7 +48,13 @@ interface Sel {
   name: string
 }
 
-export function createTree(bus: Bus, registry: Registry): Tree {
+/** What the tree needs from the model: which fields exist and what they hold. */
+export interface EditSource {
+  editableFields(kind: string): { path: string; kind: string; immutable: boolean }[]
+  readField(kind: string, namespace: string, name: string, path: string): string | number | boolean | undefined
+}
+
+export function createTree(bus: Bus, registry: Registry, edits?: EditSource): Tree {
   if (typeof document === 'undefined') return { update: () => {}, dispose: () => {} }
   const host = document.getElementById('tree')
   if (!host) {
@@ -236,19 +243,71 @@ export function createTree(bus: Bus, registry: Registry): Tree {
 
     /* The manifest, per object where the model can build one honestly. */
     dBody.append(sectionTitle('Manifest'))
-    if (kind.id === 'pod') {
-      const pod = [...s.pods.values()].find((p) => p.name === sel!.name && p.namespace === sel!.namespace)
-      if (pod) {
-        const pre = el('pre', 'tr-yaml')
-        pre.textContent = podManifestByRef(pod)
-        dBody.append(pre)
-      }
+    const y = manifestByRef(kind.id, sel.namespace, sel.name, s)
+    if (y) {
+      /*
+       * Editable, because "look at the manifest" and "change the manifest" are
+       * the same gesture in a real cluster. What is typed is read back as field
+       * changes against the text the model printed, and each one goes through
+       * the same path a form field does — so an immutable field refuses here
+       * with exactly the same reason.
+       */
+      const ta = el('textarea', 'tr-yaml tr-yaml-edit')
+      ta.value = y
+      ta.spellcheck = false
+      ta.rows = Math.min(30, y.split('\n').length + 1)
+      ta.dataset.original = y
+      dBody.append(ta)
+      const bar = el('div', 'tr-yaml-bar')
+      const applyBtn = el('button', 'tr-yaml-apply', 'Apply')
+      applyBtn.type = 'button'
+      bar.append(applyBtn, el('span', 'tr-yaml-hint', 'Edit a value and apply. Immutable fields will say why not.'))
+      dBody.append(bar)
     } else {
       /* Being straight about the gap beats printing another object's YAML and
        * letting the reader believe it is this one's. */
       dBody.append(
-        el('p', 'tr-hint', 'A per-object manifest is only modelled for Pods so far. Use the console: kubectl get ' + kind.names[1] + ' ' + sel.name + ' -o yaml'),
+        el('p', 'tr-hint', `A per-object manifest is not modelled for ${kind.title} yet. The console can still describe it: kubectl describe ${kind.names[1]} ${sel.name}`),
       )
+    }
+
+    /*
+     * Editing. Immutable fields are shown rather than hidden: the boundary
+     * between what can and cannot be changed is the lesson, and a field that is
+     * simply absent teaches nothing. Trying one returns the API's own reason.
+     */
+    const fields = edits?.editableFields(kind.id) ?? []
+    if (fields.length > 0) {
+      dBody.append(sectionTitle('Edit'))
+      const form = el('div', 'tr-edits')
+      for (const f of fields) {
+        const rowEl = el('div', `tr-edit${f.immutable ? ' is-locked' : ''}`)
+        rowEl.append(el('span', 'tr-edit-k', f.path))
+        const cur = edits?.readField(kind.id, sel.namespace, sel.name, f.path)
+        if (f.immutable) {
+          rowEl.append(el('span', 'tr-edit-v', String(cur ?? '')))
+          const lock = el('button', 'tr-edit-lock', 'immutable')
+          lock.type = 'button'
+          lock.dataset.path = f.path
+          lock.title = 'Try it anyway — the reason is worth reading'
+          rowEl.append(lock)
+        } else if (f.kind === 'boolean') {
+          const b = el('button', 'tr-edit-b')
+          b.type = 'button'
+          b.dataset.path = f.path
+          b.dataset.next = cur === true ? 'false' : 'true'
+          b.textContent = String(cur)
+          rowEl.append(b)
+        } else {
+          const inp = el('input', 'tr-edit-i')
+          inp.type = f.kind === 'number' ? 'number' : 'text'
+          inp.value = String(cur ?? '')
+          inp.dataset.path = f.path
+          rowEl.append(inp)
+        }
+        form.append(rowEl)
+      }
+      dBody.append(form)
     }
 
     /* Events about this exact object, newest last. */
@@ -278,6 +337,9 @@ export function createTree(bus: Bus, registry: Registry): Tree {
 
   const update = (s: SimState, dt: number): void => {
     if (host.hidden) return
+    /* Never repaint over a manifest someone is typing into: the four-per-second
+     * refresh would eat the edit mid-keystroke. */
+    if (dBody.contains(document.activeElement) && document.activeElement instanceof HTMLTextAreaElement) return
     acc += dt
     if (acc < REFRESH) return
     acc = 0
@@ -310,6 +372,42 @@ export function createTree(bus: Bus, registry: Registry): Tree {
       repaint()
       return
     }
+    /* An edit control: send the intent and let the model answer. The panel
+     * never writes to the cluster itself. */
+    const emitEdit = (path: string, value: string | number | boolean): void => {
+      if (!sel) return
+      bus.emit('edit', { kind: sel.kindId, namespace: sel.namespace, name: sel.name, path, value })
+    }
+    if (t instanceof HTMLElement && t.classList.contains('tr-edit-lock') && t.dataset.path) {
+      emitEdit(t.dataset.path, '')
+      return
+    }
+    if (t instanceof HTMLElement && t.classList.contains('tr-edit-b') && t.dataset.path) {
+      emitEdit(t.dataset.path, t.dataset.next === 'true')
+      return
+    }
+
+    if (t instanceof HTMLElement && t.classList.contains('tr-yaml-apply')) {
+      const ta = dBody.querySelector('.tr-yaml-edit')
+      if (ta instanceof HTMLTextAreaElement && sel) {
+        const { changes, problems } = diffManifest(ta.dataset.original ?? '', ta.value)
+        for (const p of problems) bus.emit('toast', { text: p, kind: 'warn' })
+        if (changes.length === 0 && problems.length === 0) {
+          bus.emit('toast', { text: 'nothing changed', kind: 'info' })
+        }
+        for (const c of changes) {
+          bus.emit('edit', {
+            kind: sel.kindId,
+            namespace: sel.namespace,
+            name: sel.name,
+            path: c.path,
+            value: scalar(c.after),
+          })
+        }
+      }
+      return
+    }
+
     const item = t.closest('.tr-item')
     if (item instanceof HTMLElement && item.dataset.kind && item.dataset.name) {
       sel = { kindId: item.dataset.kind, namespace: item.dataset.ns ?? '', name: item.dataset.name }
@@ -324,6 +422,24 @@ export function createTree(bus: Bus, registry: Registry): Tree {
     repaint()
   }
   search.addEventListener('input', onInput)
+
+  /* Enter commits a text or number field; blur does not, so a reader can look
+   * away from a half-typed value without the cluster acting on it. */
+  const onEditKey = (ev: KeyboardEvent): void => {
+    if (ev.key !== 'Enter') return
+    const t = ev.target
+    if (!(t instanceof HTMLInputElement) || !t.classList.contains('tr-edit-i') || !t.dataset.path || !sel) return
+    ev.preventDefault()
+    const raw = t.value.trim()
+    bus.emit('edit', {
+      kind: sel.kindId,
+      namespace: sel.namespace,
+      name: sel.name,
+      path: t.dataset.path,
+      value: t.type === 'number' ? Number(raw) : raw,
+    })
+  }
+  host.addEventListener('keydown', onEditKey)
 
   /* Typing in the filter must not reach the camera or any global shortcut. */
   const onKey = (ev: KeyboardEvent): void => {
@@ -350,6 +466,7 @@ export function createTree(bus: Bus, registry: Registry): Tree {
       host.removeEventListener('click', onClick)
       search.removeEventListener('input', onInput)
       side.removeEventListener('keydown', onKey)
+      host.removeEventListener('keydown', onEditKey)
       host.textContent = ''
       host.hidden = true
       sel = null

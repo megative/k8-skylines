@@ -105,9 +105,11 @@ export function createPlan(bus: Bus): Plan {
 
   /* Static scaffolding is built once; only the live layers are rewritten. */
   const wires = svg('g', { class: 'pl-wires' })
+  /* Traffic is redrawn with the live layer: its speed is a fact, not scenery. */
+  const flowLayer = svg('g', { class: 'pl-flows' })
   const frames = svg('g', { class: 'pl-frames' })
   const live = svg('g', { class: 'pl-live' })
-  root.append(wires, frames, live)
+  root.append(wires, flowLayer, frames, live)
 
   /* ------------------------------------------------------------------ boxes */
 
@@ -154,6 +156,30 @@ export function createPlan(bus: Bus): Plan {
         style: `--pl-accent:${hex(accent)}`,
       }),
     )
+  }
+
+  /*
+   * A flow. The dash march is done in CSS so it stays smooth between the
+   * plan's four-per-second repaints, and the period carries the rate: busier
+   * means faster, and zero means the wire is simply not drawn. A wire that is
+   * always visible would say traffic is flowing when it is not.
+   */
+  const flow = (pts: [number, number][], accent: number, rps: number, label?: string): void => {
+    if (rps <= 0.01) return
+    const period = Math.max(0.35, Math.min(4, 26 / rps))
+    const p = svg('polyline', {
+      points: pts.map(([x, y]) => `${x},${y}`).join(' '),
+      class: 'pl-flow',
+      style: `--pl-accent:${hex(accent)};animation-duration:${period.toFixed(2)}s`,
+    })
+    flowLayer.append(p)
+    if (label) {
+      const mid = pts[Math.floor(pts.length / 2)]
+      const t = svg('text', { x: mid[0] + 6, y: mid[1] - 4, class: 'pl-rate' })
+      t.textContent = label
+      t.setAttribute('style', `--pl-accent:${hex(accent)}`)
+      flowLayer.append(t)
+    }
   }
 
   /* ---------------------------------------------------------------- geometry
@@ -239,33 +265,48 @@ export function createPlan(bus: Bus): Plan {
         const p = s.pods.get(uid)
         if (p) pods.push(p)
       }
-      const cols = 4
-      const cs = 15
-      const gap = 4
-      for (let k = 0; k < pods.length && k < 12; k++) {
-        const px = x + 10 + (k % cols) * (cs + gap)
-        const py = y + 60 + Math.floor(k / cols) * (cs + gap)
+      /*
+       * Rows, not a grid of bare chips. A chip whose only information is its
+       * colour cannot be talked about — you cannot tell someone "look at the
+       * red one" and have them find it again — and the names fit, as the tree
+       * already proves.
+       */
+      const rowH = 13
+      const shown = Math.min(pods.length, 9)
+      for (let k = 0; k < shown; k++) {
+        const p = pods[k]
+        const py = y + 58 + k * rowH
         const pg = svg('g', { class: 'pl-pod', tabindex: '0', role: 'button' })
         pg.dataset.id = 'pod'
+        pg.dataset.name = p.name
+        pg.dataset.ns = p.namespace
         pg.append(
           svg('rect', {
-            x: px,
+            x: x + 10,
             y: py,
-            width: cs,
-            height: cs,
-            rx: 3,
+            width: 7,
+            height: 7,
+            rx: 1.5,
             class: 'pl-pod-r',
-            style: `--pl-accent:${hex(podColor(pods[k]))}`,
+            style: `--pl-accent:${hex(podColor(p))}`,
           }),
         )
+        const nameT = svg('text', { x: x + 22, y: py + 7, class: 'pl-pod-t' })
+        /* Trim from the front: the generated suffix is what distinguishes two
+         * pods of the same workload, so it is the half worth keeping. */
+        const maxChars = Math.max(8, Math.floor((w - 34) / 4.4))
+        nameT.textContent = p.name.length > maxChars ? '…' + p.name.slice(-(maxChars - 1)) : p.name
+        pg.append(nameT)
         const tip = svg('title')
-        tip.textContent = `${pods[k].namespace}/${pods[k].name} — ${pods[k].phase}`
+        tip.textContent = `${p.namespace}/${p.name} — ${p.phase}`
         pg.append(tip)
         live.append(pg)
       }
-      if (pods.length > 12) {
-        const more = svg('text', { x: x + 10, y: y + 60 + 3 * (cs + gap) + 12, class: 'pl-sub' })
-        more.textContent = `+${pods.length - 12} more`
+      if (pods.length > shown) {
+        const more = svg('text', { x: x + 22, y: y + 58 + shown * rowH + 9, class: 'pl-sub' })
+        /* Never silently truncate: a plan that hides pods reads as a cluster
+         * that has none. */
+        more.textContent = `+${pods.length - shown} more`
         live.append(more)
       }
     }
@@ -301,6 +342,43 @@ export function createPlan(bus: Bus): Plan {
     }
   }
 
+  /*
+   * Where the traffic actually is. The plan drew every object and not one
+   * flow, so the question it was most often opened to answer — where are the
+   * requests going — was the one it could not.
+   */
+  const drawFlows = (s: SimState): void => {
+    const svcRps = (n: string): number => s.services.find((v) => v.name === n)?.rps ?? 0
+    const ingRps = s.ingresses.reduce((a, i) => a + i.rps, 0)
+    const lbRps = svcRps('web-lb')
+
+    /* North-south: the two doors, each on its own address. */
+    flow([[135, 566], [135, 532]], COLOR.ingress, ingRps, `${Math.round(ingRps)} rps`)
+    flow([[325, 566], [325, 532]], COLOR.network, lbRps, `${Math.round(lbRps)} rps`)
+
+    /* Each Service down into the node band it feeds. */
+    const cw = (W - 80) / 6
+    const n = Math.min(s.services.length, 6)
+    for (let i = 0; i < n; i++) {
+      const v = s.services[i]
+      if (v.rps <= 0.01) continue
+      let ready = 0
+      for (const e of v.endpoints) if (e.ready) ready += 1
+      /* No ready endpoint means the connection is refused, so nothing is drawn
+       * however much the knob is asking for. */
+      if (ready === 0) continue
+      const x = 40 + i * cw + (cw - 14) / 2
+      flow([[x, 482], [x, 440]], COLOR.traffic, v.rps)
+    }
+
+    /* The control plane's own conversation, which never stops. */
+    flow([[500, 38], [500, 66]], COLOR.desired, s.api.requestsPerSec)
+    /* Writes are what reaches raft; the model tracks the etcd revision rather
+     * than a write rate, so this follows whether commits are landing at all. */
+    flow([[470, 112], [470, 128]], COLOR.raft, s.etcd.hasQuorum ? s.api.requestsPerSec * 0.35 : 0)
+    flow([[500, 174], [500, 214]], COLOR.kubelet, s.nodes.filter((x) => x.present).length)
+  }
+
   const drawStatus = (s: SimState): void => {
     const q = s.etcd.members.filter((m) => m.role !== 'down').length
     const txt = svg('text', { x: 585, y: 158, class: 'pl-stat' })
@@ -328,6 +406,8 @@ export function createPlan(bus: Bus): Plan {
     /* One wholesale rewrite of the live layer. The plan is small enough that
      * diffing it would cost more to maintain than it saves. */
     live.textContent = ''
+    flowLayer.textContent = ''
+    drawFlows(s)
     drawNodes(s)
     drawServices(s)
     drawStatus(s)
@@ -341,6 +421,12 @@ export function createPlan(bus: Bus): Plan {
     if (!(t instanceof Element)) return
     const hit = t.closest('.pl-box, .pl-pod')
     if (hit instanceof SVGElement && hit.dataset.id) {
+      /* Both intents: `inspect` names the object the reader actually clicked,
+       * `focus` names the mechanism it is an instance of. Surfaces that emit
+       * only one of them make the three views disagree about the selection. */
+      if (hit.dataset.name) {
+        bus.emit('inspect', { kind: hit.dataset.id, namespace: hit.dataset.ns ?? '', name: hit.dataset.name })
+      }
       bus.emit('focus', { id: hit.dataset.id, source: 'menu' })
     }
   }

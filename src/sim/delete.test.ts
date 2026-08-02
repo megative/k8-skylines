@@ -282,3 +282,74 @@ describe('apply recreates predefined objects', () => {
     expect(names(sim.state.ingresses)).toContain(ing)
   })
 })
+
+describe('a Service with no ready endpoints carries no traffic', () => {
+  /*
+   * kube-proxy programmes one rule per *ready* EndpointSlice entry. With an
+   * empty set there is no backend to rewrite the destination to, so the kernel
+   * refuses the connection: nothing flows, and nothing queues waiting for a pod
+   * to become ready. The model used to send full traffic into a Service whose
+   * pods were all gone, which drew glyphs flying at nodes running nothing.
+   */
+  const svc = (sim: ReturnType<typeof createSim>, name: string) =>
+    sim.state.services.find((v) => v.name === name)!
+
+  const readyOf = (sim: ReturnType<typeof createSim>, name: string): number =>
+    svc(sim, name).endpoints.filter((e) => e.ready).length
+
+  it('drops the web Service to zero rps once its pods are gone', () => {
+    const sim = createSim(0xe0f1)
+    run(sim, 90)
+    expect(readyOf(sim, 'web')).toBeGreaterThan(0)
+    expect(svc(sim, 'web').rps).toBeGreaterThan(0)
+
+    /* Delete the Deployment so the ReplicaSet cannot put the pods back. */
+    sim.deleteObject('deployment', 'shop', 'web')
+    run(sim, 120)
+
+    expect(readyOf(sim, 'web')).toBe(0)
+    /* approach() decays exponentially and never lands on exactly zero, so the
+     * claim is "no traffic", not "the float is 0". Anything under a hundredth of
+     * a request per second is nothing by any reading. */
+    expect(svc(sim, 'web').rps).toBeLessThan(0.01)
+    /* The LoadBalancer selects the same pods, so it is empty at the same time. */
+    expect(svc(sim, 'web-lb').rps).toBeLessThan(0.01)
+    /* The knob is still asking for traffic; there is simply nowhere to put it. */
+    expect(sim.state.knobs.trafficRps).toBeGreaterThan(0)
+  })
+
+  it('keeps serving while at least one endpoint is ready', () => {
+    const sim = createSim(0xe0f2)
+    sim.setKnob('replicas', 1)
+    run(sim, 120)
+    expect(readyOf(sim, 'web')).toBe(1)
+    expect(svc(sim, 'web').rps).toBeGreaterThan(0)
+  })
+})
+
+describe('the database is reached from the api tier, not from a door', () => {
+  /*
+   * Nothing external addresses the database: no Ingress rule names it, it has no
+   * LoadBalancer, and it is Headless, so there is not even a virtual IP. Its load
+   * can only come from the tier in front of it, which is why killing that tier
+   * has to silence it.
+   */
+  const rpsOf = (sim: ReturnType<typeof createSim>, name: string): number =>
+    sim.state.services.find((v) => v.name === name)!.rps
+
+  it('goes quiet when the api pods are gone, even with the doors wide open', () => {
+    const sim = createSim(0xdb01)
+    run(sim, 90)
+    expect(rpsOf(sim, 'api')).toBeGreaterThan(0)
+    expect(rpsOf(sim, 'db')).toBeGreaterThan(0)
+
+    sim.deleteObject('deployment', 'shop', 'api')
+    run(sim, 150)
+
+    /* Both doors are untouched and still admitting traffic... */
+    expect(sim.state.ingresses.reduce((a, i) => a + i.rps, 0)).toBeGreaterThan(0)
+    /* ...but nothing can reach the database any more. */
+    expect(rpsOf(sim, 'api')).toBeLessThan(0.01)
+    expect(rpsOf(sim, 'db')).toBeLessThan(0.01)
+  })
+})

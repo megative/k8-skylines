@@ -5,7 +5,7 @@ import type { DistrictId, Explainer, Knobs, SimState } from '../core/types'
 import { knobSpec } from './controls'
 import { knobsFor } from './knob-map'
 import { docsFor } from './docs-map'
-import { hasManifest, manifestFor } from './manifest'
+import { hasManifest, manifestByRef, manifestFor } from './manifest'
 import { DISTRICTS } from '../world/layout'
 
 /* ============================================================================
@@ -110,7 +110,13 @@ function relatedTo(registry: Registry, entry: Explainer, limit: number): Explain
   return siblings.concat(rest).slice(0, limit)
 }
 
-export function createPanel(bus: Bus, registry: Registry): Panel {
+/** What the inspector needs from the model to offer edits. */
+export interface PanelEditSource {
+  editableFields(kind: string): { path: string; kind: string; immutable: boolean }[]
+  readField(kind: string, namespace: string, name: string, path: string): string | number | boolean | undefined
+}
+
+export function createPanel(bus: Bus, registry: Registry, edits?: PanelEditSource): Panel {
   /* Importable without a DOM so unit tests and tooling can load the module. */
   if (typeof document === 'undefined') {
     return { update: () => {}, dispose: () => {} }
@@ -162,6 +168,8 @@ export function createPanel(bus: Bus, registry: Registry): Panel {
 
   /* The object behind the building, as kubectl would print it. Collapsed by
    * default: it is the answer to "show me", not something to read past. */
+  const editSec = el('section', 'pnl-sec pnl-edits')
+  editSec.hidden = true
   const yamlSec = el('section', 'pnl-sec pnl-yaml')
   const yamlBox = document.createElement('details')
   const yamlSummary = document.createElement('summary')
@@ -185,7 +193,7 @@ export function createPanel(bus: Bus, registry: Registry): Panel {
   relatedSec.append(relatedHead, relatedChips)
 
   const body = el('div', 'pnl-body')
-  body.append(summary, metricsSec, tuneSec, detailSec, yamlSec, caveatSec, docsSec, relatedSec)
+  body.append(summary, metricsSec, tuneSec, editSec, detailSec, yamlSec, caveatSec, docsSec, relatedSec)
   article.append(head, body)
   host.appendChild(article)
   host.hidden = true
@@ -287,6 +295,98 @@ export function createPanel(bus: Bus, registry: Registry): Panel {
     }
   }
 
+  /*
+   * The concrete object the reader last picked, if it belongs to the Explainer
+   * being rendered. Cleared whenever a mechanism is selected on its own, so a
+   * stale name can never sit over the wrong lesson.
+   */
+  let picked: { id: string; namespace: string; name: string } | null = null
+  const instanceFor = (entryId: string): { namespace: string; name: string } | null =>
+    picked && picked.id === entryId ? picked : null
+
+  /*
+   * Editing, offered only when a concrete object is selected. A mechanism has no
+   * fields to change — "a Pod" is not a thing you can patch — so the section
+   * simply is not there, rather than being there and refusing everything.
+   *
+   * Immutable fields are listed rather than hidden: the boundary is the lesson,
+   * and clicking one returns the API's own reason.
+   */
+  const renderEdits = (entry: Explainer): void => {
+    editSec.textContent = ''
+    const inst = instanceFor(entry.id)
+    const fields = inst && edits ? edits.editableFields(entry.id) : []
+    editSec.hidden = fields.length === 0
+    if (!inst || fields.length === 0) return
+
+    const h = document.createElement('h3')
+    h.className = 'pnl-h'
+    h.textContent = 'Edit'
+    editSec.append(h)
+
+    for (const f of fields) {
+      const row = document.createElement('div')
+      row.className = `pnl-edit${f.immutable ? ' is-locked' : ''}`
+      const k = document.createElement('span')
+      k.className = 'pnl-edit-k'
+      k.textContent = f.path
+      row.append(k)
+
+      const cur = edits!.readField(entry.id, inst.namespace, inst.name, f.path)
+      if (f.immutable) {
+        const v = document.createElement('span')
+        v.className = 'pnl-edit-v'
+        v.textContent = String(cur ?? '')
+        const lock = document.createElement('button')
+        lock.type = 'button'
+        lock.className = 'pnl-edit-lock'
+        lock.dataset.path = f.path
+        lock.textContent = 'immutable'
+        lock.title = 'Try it — the reason is worth reading'
+        row.append(v, lock)
+      } else if (f.kind === 'boolean') {
+        const b = document.createElement('button')
+        b.type = 'button'
+        b.className = 'pnl-edit-b'
+        b.dataset.path = f.path
+        b.dataset.next = cur === true ? 'false' : 'true'
+        b.textContent = String(cur)
+        row.append(b)
+      } else {
+        const i = document.createElement('input')
+        i.className = 'pnl-edit-i'
+        i.type = f.kind === 'number' ? 'number' : 'text'
+        i.value = String(cur ?? '')
+        i.dataset.path = f.path
+        row.append(i)
+      }
+      editSec.append(row)
+    }
+  }
+
+  /* The panel never writes to the cluster: it emits the intent and the model
+   * answers, refusal included. */
+  const emitEdit = (path: string, value: string | number | boolean): void => {
+    if (!picked) return
+    bus.emit('edit', { kind: picked.id, namespace: picked.namespace, name: picked.name, path, value })
+  }
+  const onEditClick = (ev: MouseEvent): void => {
+    const t = ev.target
+    if (!(t instanceof HTMLElement) || !t.dataset.path) return
+    if (t.classList.contains('pnl-edit-lock')) emitEdit(t.dataset.path, '')
+    else if (t.classList.contains('pnl-edit-b')) emitEdit(t.dataset.path, t.dataset.next === 'true')
+  }
+  editSec.addEventListener('click', onEditClick)
+  const onEditKey = (ev: KeyboardEvent): void => {
+    if (ev.key !== 'Enter') return
+    const t = ev.target
+    if (!(t instanceof HTMLInputElement) || !t.dataset.path) return
+    ev.preventDefault()
+    const raw = t.value.trim()
+    emitEdit(t.dataset.path, t.type === 'number' ? Number(raw) : raw)
+  }
+  editSec.addEventListener('keydown', onEditKey)
+
   const render = (entry: Explainer): void => {
     current = entry
     const label = DISTRICT_LABEL.get(entry.district) ?? entry.district
@@ -294,9 +394,17 @@ export function createPanel(bus: Bus, registry: Registry): Panel {
     districtBtn.disabled = false
     article.style.setProperty('--pnl-raw', hex(DISTRICT_COLOR[entry.district]))
 
-    title.textContent = entry.title
-    kubeName.hidden = !entry.kubeName
-    if (entry.kubeName) kubeName.textContent = entry.kubeName
+    /*
+     * An Explainer is a mechanism, so its title is "Pod". When the reader picked
+     * a *specific* object the header has to say which one — "Pod" over a header
+     * that was reached by clicking one particular pod is the panel refusing to
+     * answer the question that was asked.
+     */
+    const inst = instanceFor(entry.id)
+    title.textContent = inst ? inst.name : entry.title
+    const sub = inst ? `${entry.kubeName ?? entry.title} · ${inst.namespace}` : entry.kubeName
+    kubeName.hidden = !sub
+    if (sub) kubeName.textContent = sub
 
     prose(summary, entry.summary)
 
@@ -312,6 +420,8 @@ export function createPanel(bus: Bus, registry: Registry): Panel {
     yamlSec.hidden = !hasManifest(entry.id)
     yamlBox.open = false
     yamlPre.textContent = ''
+
+    renderEdits(entry)
 
     const doc = docsFor(entry.id)
     docsSec.hidden = doc === undefined
@@ -406,7 +516,16 @@ export function createPanel(bus: Bus, registry: Registry): Panel {
 
   /* ---------------------------------------------------------------- wiring */
 
+  /* An object selection arrives before the mechanism focus that accompanies it,
+   * so record it and let the focus handler paint. */
+  const offInspect = bus.on('inspect', ({ kind, namespace, name }) => {
+    picked = name ? { id: kind, namespace, name } : null
+  })
+
   const offFocus = bus.on('focus', ({ id }) => {
+    /* A mechanism picked on its own is not an object: drop any stale instance
+     * rather than captioning this lesson with the last pod's name. */
+    if (!picked || picked.id !== id) picked = null
     const entry = registry.get(id)
     if (entry) render(entry)
     else unknown(id)
@@ -497,7 +616,14 @@ export function createPanel(bus: Bus, registry: Registry): Panel {
         }
       }
       if (current && !yamlSec.hidden && yamlBox.open) {
-        const text = manifestFor(current.id, s)
+        /*
+         * The object the reader picked, when there is one. `manifestFor` answers
+         * "what does a Pod look like" by showing a representative — fine for a
+         * mechanism, a lie under a header that names one particular pod.
+         */
+        const text = picked
+          ? (manifestByRef(picked.id, picked.namespace, picked.name, s) ?? manifestFor(current.id, s))
+          : manifestFor(current.id, s)
         if (text !== undefined && yamlPre.textContent !== text) yamlPre.textContent = text
       }
       if (!current || !current.metrics) return
@@ -507,6 +633,7 @@ export function createPanel(bus: Bus, registry: Registry): Panel {
       renderMetrics(s)
     },
     dispose(): void {
+      offInspect()
       offFocus()
       offBlur()
       offOverlay()

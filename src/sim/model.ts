@@ -57,6 +57,7 @@ import {
 import { schedulerWatch, syncSchedulerQueue, tickScheduler } from './scheduling'
 import { recomputeNodeAllocation, tickKubelet } from './kubelet'
 import { tickNetwork } from './network'
+import { editableFields as editableFieldsOf, editClusterObject, readField as readFieldOf, type EditResult } from './edit'
 import { tickStorage } from './storage'
 import { IMAGES } from './images'
 import { SCENARIOS } from './scenarios'
@@ -98,6 +99,18 @@ export interface Sim {
   applyObject(kind: string, name: string): ApplyResult
   /** The predefined objects apply can create. */
   applyCatalogue(): { kind: string; name: string }[]
+  /**
+   * Change one field on one live object, the way `kubectl edit` does. Refusing
+   * is a normal outcome and carries the reason the API server would give:
+   * hitting the mutable/immutable boundary is the lesson, not a fault. The edit
+   * goes through the same pipeline as a delete, so one issued without quorum
+   * cannot commit.
+   */
+  editObject(kind: string, namespace: string, name: string, path: string, value: string | number | boolean): EditResult
+  /** Which fields this model exposes for a kind, and which of them refuse. */
+  editableFields(kind: string): { path: string; kind: string; immutable: boolean }[]
+  /** The live value of one editable field, so a form can show what is there. */
+  readField(kind: string, namespace: string, name: string, path: string): string | number | boolean | undefined
   activeScenario: string | null
   scenarios: readonly Scenario[]
   reset(): void
@@ -1209,6 +1222,18 @@ export function createSim(seed = 0x5eed1234): Sim {
 
     applyCatalogue(): { kind: string; name: string }[] {
       return applyCatalogueOf(catalogue)
+    },
+
+    editObject(kind, namespace, name, path, value): EditResult {
+      return editClusterObject(ctx, kind, namespace, name, path, value)
+    },
+
+    editableFields(kind): { path: string; kind: string; immutable: boolean }[] {
+      return editableFieldsOf(kind)
+    },
+
+    readField(kind, namespace, name, path): string | number | boolean | undefined {
+      return readFieldOf(ctx, kind, namespace, name, path)
     },
 
     stopScenario(): void {

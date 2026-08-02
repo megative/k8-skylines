@@ -457,3 +457,85 @@ details[open] > .pnl-yaml-summary::before {
   white-space: pre;
   tab-size: 2;
 }
+
+/* --------------------------------------------------- editing from the panel
+
+   Only present when a concrete object is selected: a mechanism has no fields to
+   patch — "a Pod" is not a thing you can change — so the section is absent
+   rather than present and refusing everything. Immutable fields are listed and
+   still clickable, because the refusal carries the reason. */
+
+.pnl-edit {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.2rem 0;
+  font-size: 0.75rem;
+}
+
+.pnl-edit-k {
+  flex: none;
+  width: 13rem;
+  font-family: var(--k8-mono, ui-monospace, Menlo, monospace);
+  font-size: 0.6875rem;
+  color: var(--k8-dim);
+}
+
+.pnl-edit.is-locked .pnl-edit-k {
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--k8-failed) 60%, transparent);
+}
+
+.pnl-edit-v {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--k8-mono, ui-monospace, Menlo, monospace);
+  font-size: 0.6875rem;
+  color: color-mix(in srgb, var(--k8-text) 60%, transparent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pnl-edit-i {
+  flex: 1;
+  min-width: 0;
+  appearance: none;
+  border: 1px solid var(--k8-border);
+  border-radius: 6px;
+  background: var(--k8-panel);
+  color: var(--k8-text);
+  font: 400 0.6875rem/1.4 var(--k8-mono, ui-monospace, Menlo, monospace);
+  padding: 0.22rem 0.4rem;
+  outline: none;
+}
+
+.pnl-edit-i:focus-visible {
+  border-color: color-mix(in srgb, var(--k8-accent) 65%, transparent);
+}
+
+.pnl-edit-b,
+.pnl-edit-lock {
+  appearance: none;
+  border: 1px solid var(--k8-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--k8-text);
+  font: 550 0.625rem/1 var(--k8-mono, ui-monospace, Menlo, monospace);
+  padding: 0.26rem 0.5rem;
+  cursor: pointer;
+}
+
+.pnl-edit-b:hover {
+  border-color: color-mix(in srgb, var(--k8-accent) 60%, transparent);
+}
+
+.pnl-edit-lock {
+  flex: none;
+  color: var(--k8-failed);
+  border-color: color-mix(in srgb, var(--k8-failed) 40%, transparent);
+}
+
+.pnl-edit-lock:hover {
+  background: color-mix(in srgb, var(--k8-failed) 12%, transparent);
+}

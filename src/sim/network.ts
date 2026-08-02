@@ -186,17 +186,53 @@ export function tickNetwork(ctx: SimCtx, dt: number): void {
     policy.denied += deniedRps * dt
   }
 
+  /*
+   * A Service with no ready endpoints carries nothing.
+   *
+   * This is not a detail of the drawing. kube-proxy programmes one rule per
+   * *ready* EndpointSlice entry, so with an empty set there is no backend to
+   * rewrite the destination to and the kernel refuses the connection outright —
+   * a connection refused, not a timeout. Traffic does not queue anywhere waiting
+   * for a pod to become ready.
+   *
+   * Without this the model sent full traffic into a Service whose pods were all
+   * Pending, and the flow glyphs dutifully flew to nodes that were running
+   * nothing. CoreDNS above already gates its query rate on ready replicas; every
+   * Service has to obey the same rule.
+   */
+  const dbReady = db ? readyEndpoints(db) : 0
+
   if (web) {
-    web.rps = approach(web.rps, webPathRps, 2, dt)
+    web.rps = approach(web.rps, webReady > 0 ? webPathRps : 0, 2, dt)
   }
   if (api) {
     /* East-west traffic from web is allowed by the policy; direct ingress is not. */
-    api.rps = approach(api.rps, webTotal * 0.35 + (apiPathRps - deniedRps), 2, dt)
+    const apiTarget = webTotal * 0.35 + (apiPathRps - deniedRps)
+    api.rps = approach(api.rps, apiReady > 0 ? apiTarget : 0, 2, dt)
   }
-  if (db) db.rps = approach(db.rps, webTotal * 0.1, 2, dt)
+  /*
+   * The database is reached east-west, from the api pods, and from nowhere else.
+   * No door talks to it: it has no Ingress rule, no LoadBalancer and no external
+   * address, so its load has to follow the tier in front of it. Deriving it from
+   * the web traffic meant a cluster whose api pods were all dead still showed
+   * queries arriving at the database.
+   *
+   * It is also Headless — clusterIP: None — so there is no virtual IP and
+   * kube-proxy programmes no rules for it. The client resolves
+   * db.shop.svc.cluster.local, gets pod IPs back, and connects straight to one.
+   * The Service here is a DNS construct, not a hop.
+   */
+  if (db) {
+    const dbTarget = api ? api.rps * 0.3 : 0
+    db.rps = approach(db.rps, dbReady > 0 ? dbTarget : 0, 2, dt)
+  }
   /* The LoadBalancer carries its own traffic on its own address — not a mirror
-   * of the Ingress path, or deleting it would change nothing. */
-  if (lb) lb.rps = approach(lb.rps, adm.viaLb, 2, dt)
+   * of the Ingress path, or deleting it would change nothing. It selects the web
+   * pods, so it is empty exactly when they are. */
+  if (lb) {
+    const lbReady = readyEndpoints(lb)
+    lb.rps = approach(lb.rps, lbReady > 0 ? adm.viaLb : 0, 2, dt)
+  }
   if (kubernetes) {
     kubernetes.rps = approach(kubernetes.rps, ctx.s.api.requestsPerSec, 1.5, dt)
   }

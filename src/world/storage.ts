@@ -55,9 +55,17 @@ const TICKET_BOUND_Z = PARK_Z - 26
 const TICKET_PITCH = 18
 const TANK_PITCH = 19
 const TANK_R = 7.2
-const TANK_BASE_H = 8
-/** A tank's barrel grows this many metres per requested GiB. */
-const TANK_H_PER_GIB = 1.9
+const TANK_BASE_H = 11
+/**
+ * A tank's barrel grows this many metres per requested GiB.
+ *
+ * Compressed, as the PV explainer already says, so a 1Gi and a 100Gi volume both
+ * fit on screen. Raised from 1.9 because at that rate the whole plant sat under
+ * 25 on a city plate over a thousand across: capacity was the one thing a tank
+ * exists to show and it was only legible on foot. The compression curve is
+ * unchanged, so the ratios between volumes still read the same.
+ */
+const TANK_H_PER_GIB = 5.2
 const RECLAIM_Z = PARK_Z + 18
 
 /* Where each op class runs on the storage-to-nodes road. provision and delete

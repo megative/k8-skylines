@@ -3,7 +3,7 @@ import { N_NODES } from '../core/types'
 import type { IngressState, ServiceState, SimState } from '../core/types'
 import { COLOR, ghost, glass, mat, neon, structural } from '../core/theme'
 import { Rng, clamp, formatMs, formatPercent } from '../core/util'
-import { ANCHOR, CITY, nodeAnchor, nodePartPos, routeCurve } from './layout'
+import { ANCHOR, CITY, nodeAnchor, nodePartPos, routeCurve, SERVICE_ROW_ORDER, serviceRowSlot } from './layout'
 import type { WorldCtx, WorldModule } from './module'
 
 /* ============================================================================
@@ -301,17 +301,31 @@ function readyEndpoints(svc: ServiceState): number {
 }
 
 /** Ingress rules name a Service by name; accept "ns/name" too. */
+/*
+ * Which slot a Service stands in. The order is geography and lives in
+ * layout.ts, because the route legs leave from these same slots: deciding it
+ * twice is how a hologram ends up in one place and its traffic in another.
+ */
 function serviceSlotFor(s: SimState, ref: string): number {
   const n = Math.min(s.services.length, MAX_SERVICES)
   for (let i = 0; i < n; i++) {
     const svc = s.services[i]
-    if (svc.name === ref) return i
+    let hit = svc.name === ref
     /* charCodeAt, not charAt: this runs per bay per frame and must not allocate. */
-    if (ref.length > svc.name.length && ref.endsWith(svc.name) && ref.charCodeAt(ref.length - svc.name.length - 1) === 47) {
-      return i
+    if (!hit && ref.length > svc.name.length && ref.endsWith(svc.name) && ref.charCodeAt(ref.length - svc.name.length - 1) === 47) {
+      hit = true
     }
+    if (hit) return serviceRowSlot(svc.name)
   }
   return -1
+}
+
+/** The Service standing in a slot, or undefined when the slot is empty. */
+function serviceInSlot(s: SimState, slot: number): SimState['services'][number] | undefined {
+  const want = SERVICE_ROW_ORDER[slot]
+  if (want === undefined) return undefined
+  for (const svc of s.services) if (svc.name === want) return svc
+  return undefined
 }
 
 /** Ratios arrive from the sim as fractions; tolerate a percentage anyway rather
@@ -1300,10 +1314,12 @@ export function createNetwork(ctx: WorldCtx): WorldModule {
   }
 
   function updateServices(s: SimState): void {
-    const nSvc = Math.min(s.services.length, MAX_SERVICES)
     for (let i = 0; i < MAX_SERVICES; i++) {
       const slot = slots[i]
-      if (i >= nSvc) {
+      /* A slot is empty when its Service is not in the cluster — deleted, or
+       * never seeded — not when the seed array happens to be short. */
+      const inSlot = serviceInSlot(s, i)
+      if (inSlot === undefined) {
         slot.group.visible = false
         for (let n = 0; n < N_NODES; n++) {
           slot.doors[n].visible = false
@@ -1325,7 +1341,7 @@ export function createNetwork(ctx: WorldCtx): WorldModule {
         continue
       }
 
-      const svc = s.services[i]
+      const svc = inSlot
       const headless = svc.type === 'Headless'
       const ready = readyEndpoints(svc)
       const dead = !headless && ready === 0
@@ -1508,11 +1524,14 @@ export function createNetwork(ctx: WorldCtx): WorldModule {
         railGeo.attributes.position.needsUpdate = true
       }
 
-      let backends = 0
-      if (slotIdx >= 0) backends = readyEndpoints(s.services[slotIdx])
+      /* slotIdx is a position in the row, not an index into the seed array —
+       * those stopped being the same thing when the row gained a meaningful
+       * order. Resolve the Service by slot or this reads the wrong one. */
+      const backingSvc = slotIdx >= 0 ? serviceInSlot(s, slotIdx) : undefined
+      const backends = backingSvc ? readyEndpoints(backingSvc) : 0
       bay.slab.material = M.deck
-      bay.lamp.material = slotIdx < 0 ? M.failed : backends === 0 ? M.ruleReject : M.ready
-      _c.setHex(slotIdx < 0 || backends === 0 ? COLOR.failed : COLOR.ingress)
+      bay.lamp.material = backingSvc === undefined ? M.failed : backends === 0 ? M.ruleReject : M.ready
+      _c.setHex(backingSvc === undefined || backends === 0 ? COLOR.failed : COLOR.ingress)
       const k = 0.35
       railCol[o] = _c.r * k
       railCol[o + 1] = _c.g * k

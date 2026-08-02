@@ -32,6 +32,7 @@ export type Intent =
   | { kind: 'toast'; text: string; level: 'info' | 'warn' | 'error' }
   | { kind: 'delete'; resource: string; namespace: string; name: string }
   | { kind: 'apply'; resource: string; name: string }
+  | { kind: 'edit'; resource: string; namespace: string; name: string; path: string; value: string | number | boolean }
 
 export interface KubectlResult {
   lines: OutLine[]
@@ -615,17 +616,43 @@ function scale(p: Parsed, s: SimState): KubectlResult {
   const name = target.includes('/') ? target.split('/')[1] : p.args[2] ?? target
   const dep = s.deployments.find((d) => d.name === name)
   if (!dep) return err(`deployments "${name}" not found`)
-  /* Only the demo Deployment's replica count is a knob in this model. Saying so
-   * is better than silently scaling the wrong thing or nothing. */
-  if (name !== 'web') {
-    return err(`In this model only deployment/web has an adjustable replica count. Others are fixed scenery.`)
-  }
+  /*
+   * Goes through the same edit path the panel uses, rather than through the
+   * replicas knob. That is what lets it scale any Deployment instead of only
+   * the demo one, and it means a scale issued without etcd quorum cannot commit
+   * — the knob had no pipeline behind it.
+   */
   return {
     lines: [{ text: `deployment.apps/${name} scaled`, cls: 'ok' }],
     intents: [
-      { kind: 'knob', key: 'replicas', value: Math.max(0, Math.round(n)) },
-      { kind: 'toast', text: `Scaled deployment/web to ${Math.round(n)}`, level: 'info' },
+      {
+        kind: 'edit',
+        resource: 'deployment',
+        namespace: dep.namespace,
+        name,
+        path: 'spec.replicas',
+        value: Math.max(0, Math.round(n)),
+      },
     ],
+  }
+}
+
+/* `cordon` and `uncordon` are one field, and the pair is worth having spelled
+ * out: cordon stops new placement and leaves the running pods exactly where
+ * they are, which is the whole difference between it and a drain. */
+function cordon(p: Parsed, s: SimState, on: boolean): KubectlResult {
+  const name = p.args[1]
+  if (!name) return err(`usage: kubectl ${on ? 'cordon' : 'uncordon'} <node>`)
+  const node = s.nodes.find((n) => n.present && n.name === name)
+  if (!node) return err(`nodes "${name}" not found`)
+  return {
+    lines: [
+      { text: `node/${name} ${on ? 'cordoned' : 'uncordoned'}`, cls: 'ok' },
+      on
+        ? { text: 'Existing pods keep running here; only new bindings are refused. That is cordon, not drain.', cls: 'dim' }
+        : { text: 'The scheduler may bind pods here again.', cls: 'dim' },
+    ],
+    intents: [{ kind: 'edit', resource: 'node', namespace: '', name, path: 'spec.unschedulable', value: on }],
   }
 }
 
@@ -874,6 +901,10 @@ export function runKubectl(line: string, env: KubectlEnv): KubectlResult {
       return explain(p, s, env.explain)
     case 'scale':
       return scale(p, s)
+    case 'cordon':
+      return cordon(p, s, true)
+    case 'uncordon':
+      return cordon(p, s, false)
     case 'delete':
     case 'rm':
       return del(p, s)
@@ -909,7 +940,7 @@ export function runKubectl(line: string, env: KubectlEnv): KubectlResult {
  * but deliberately simple: verb, then kind, then a live name.
  * -------------------------------------------------------------------------*/
 
-const VERBS = ['get', 'describe', 'explain', 'scale', 'delete', 'apply', 'top', 'logs', 'api-resources', 'version', 'events', 'help', 'clear']
+const VERBS = ['get', 'describe', 'explain', 'scale', 'cordon', 'uncordon', 'delete', 'apply', 'top', 'logs', 'api-resources', 'version', 'events', 'help', 'clear']
 const KIND_TOKENS = KINDS.map((k) => k.names[0])
 const VERB_TAKES_KIND = new Set(['get', 'describe', 'explain', 'delete', 'apply'])
 /** Kinds that can be applied, canonical plural — the deployable subset. */

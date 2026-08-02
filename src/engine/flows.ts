@@ -3,7 +3,8 @@ import type { SimState } from '../core/types'
 import { COLOR, getMode, neon } from '../core/theme'
 import type { ThemeMode } from '../core/theme'
 import { formatMs, formatPercent } from '../core/util'
-import { ROUTES, routeCurve } from '../world/layout'
+import { N_NODES } from '../core/types'
+import { eastWestLane, ROUTES, routeCurve, serviceLeg, type ServiceLegKey } from '../world/layout'
 import type { RouteDef, RouteId } from '../world/layout'
 import type { WorldCtx, WorldModule } from '../world/module'
 
@@ -213,14 +214,35 @@ export function createFlows(ctx: WorldCtx): Flows {
    * LoadBalancer is a third door with its own address. Six legs, not one line. */
   const R_ING_WEB = byId.get('ingress-to-svc-web')!
   const R_ING_API = byId.get('ingress-to-svc-api')!
-  const R_SVC_WEB = byId.get('svc-web-to-nodes')!
-  const R_SVC_API = byId.get('svc-api-to-nodes')!
   const R_LB_SVC = byId.get('lb-to-svc')!
-  const R_SVC_LB = byId.get('svc-lb-to-nodes')!
+  /* One leg per (service, node). Which of them carries anything is decided each
+   * frame from the EndpointSlice, never from geometry. */
+  const R_LEG: Record<ServiceLegKey, number[]> = { web: [], api: [], lb: [] }
+  for (const key of ['web', 'api', 'lb'] as const) {
+    for (let n = 0; n < N_NODES; n++) R_LEG[key].push(byId.get(serviceLeg(key, n))!)
+  }
+  /* East-west lanes, indexed [from][to]. */
+  const R_EW: number[][] = []
+  for (let a = 0; a < N_NODES; a++) {
+    const row: number[] = []
+    for (let b = 0; b < N_NODES; b++) row.push(byId.get(eastWestLane(a, b))!)
+    R_EW.push(row)
+  }
 
   /* ------------------------------------------------------------------------
    * One InstancedMesh per kind: one geometry, one material, one draw call.
    * ----------------------------------------------------------------------*/
+  /* Per-frame scratch: the frame loop must allocate nothing. */
+  const perNode = new Int32Array(N_NODES)
+  /* Ready pods per node, by tier, for the east-west split. Allocated once. */
+  const apiPerNode = new Int32Array(N_NODES)
+  const dbPerNode = new Int32Array(N_NODES)
+  /* Node names are `node-<i>` in this model; parse rather than search. */
+  const nodeIndexOf = (name: string): number => {
+    const dash = name.lastIndexOf('-')
+    return dash < 0 ? -1 : Number(name.slice(dash + 1)) - 1
+  }
+
   const buckets: Bucket[] = []
   for (let k = 0; k < KINDS.length; k++) {
     const kind = KINDS[k]
@@ -415,7 +437,7 @@ export function createFlows(ctx: WorldCtx): Flows {
      * continues from that Service down into the node grid. The LoadBalancer
      * carries what arrives at its own address and never touches the Ingress.
      */
-    const svcOf = (name: string): { rps: number } | undefined => {
+    const svcOf = (name: string): SimState['services'][number] | undefined => {
       const list = s.services
       if (!list) return undefined
       for (let i = 0; i < list.length; i++) if (list[i].name === name) return list[i]
@@ -424,17 +446,72 @@ export function createFlows(ctx: WorldCtx): Flows {
     const webSvc = svcOf('web')
     const apiSvc = svcOf('api')
     const lbSvc = svcOf('web-lb')
+    const dbSvc = svcOf('db')
     /* Served traffic in the ratio the Ingress rules actually carry. */
     const served = servedRps / RPS_PER_GLYPH
     const webShare = Math.min(MAX_RATE, served * 0.7)
     const apiShare = Math.min(MAX_RATE, served * 0.3)
     routes[R_ING_WEB].rate = webSvc ? webShare : 0
     routes[R_ING_API].rate = apiSvc ? apiShare : 0
-    routes[R_SVC_WEB].rate = webSvc ? Math.min(MAX_RATE, webSvc.rps / RPS_PER_GLYPH) : 0
-    routes[R_SVC_API].rate = apiSvc ? Math.min(MAX_RATE, apiSvc.rps / RPS_PER_GLYPH) : 0
-    const lbRate = lbSvc ? Math.min(MAX_RATE, lbSvc.rps / RPS_PER_GLYPH) : 0
-    routes[R_LB_SVC].rate = lbRate
-    routes[R_SVC_LB].rate = lbRate
+    /*
+     * Split each Service's traffic across the nodes that actually hold a ready
+     * endpoint of it. A leg to a machine running none of its pods runs at zero,
+     * so nothing is ever drawn arriving somewhere it could not arrive.
+     * kube-proxy picks uniformly among ready endpoints, so the split is even.
+     */
+    const spread = (svc: { rps: number; endpoints: readonly { ready: boolean; nodeName?: string }[] } | undefined, legs: number[]): void => {
+      if (!svc) {
+        for (const r of legs) routes[r].rate = 0
+        return
+      }
+      let total = 0
+      for (let n = 0; n < legs.length; n++) perNode[n] = 0
+      for (const e of svc.endpoints) {
+        if (!e.ready || e.nodeName === undefined) continue
+        const idx = nodeIndexOf(e.nodeName)
+        if (idx < 0 || idx >= legs.length) continue
+        perNode[idx] += 1
+        total += 1
+      }
+      for (let n = 0; n < legs.length; n++) {
+        routes[legs[n]].rate = total > 0 ? Math.min(MAX_RATE, (svc.rps * (perNode[n] / total)) / RPS_PER_GLYPH) : 0
+      }
+    }
+    spread(webSvc, R_LEG.web)
+    spread(apiSvc, R_LEG.api)
+    spread(lbSvc, R_LEG.lb)
+
+    /*
+     * The api -> db hop, machine to machine. Every ready api pod may talk to
+     * every ready db pod — a Headless Service hands back all the pod IPs and the
+     * client picks — so the load spreads over the product of the two placements.
+     * A lane whose source runs no api pod, or whose destination runs no db pod,
+     * carries nothing.
+     */
+    apiPerNode.fill(0)
+    dbPerNode.fill(0)
+    let apiPods = 0
+    let dbPods = 0
+    for (const p of s.pods.values()) {
+      if (p.nodeName === undefined || !p.conditions?.Ready) continue
+      const idx = nodeIndexOf(p.nodeName)
+      if (idx < 0 || idx >= N_NODES) continue
+      if (p.labels['app'] === 'api') {
+        apiPerNode[idx] += 1
+        apiPods += 1
+      } else if (p.labels['app'] === 'db') {
+        dbPerNode[idx] += 1
+        dbPods += 1
+      }
+    }
+    const dbRps = dbSvc ? dbSvc.rps : 0
+    for (let a = 0; a < N_NODES; a++) {
+      for (let b = 0; b < N_NODES; b++) {
+        const share = apiPods > 0 && dbPods > 0 ? (apiPerNode[a] / apiPods) * (dbPerNode[b] / dbPods) : 0
+        routes[R_EW[a][b]].rate = Math.min(MAX_RATE, (dbRps * share) / RPS_PER_GLYPH)
+      }
+    }
+    routes[R_LB_SVC].rate = lbSvc ? Math.min(MAX_RATE, lbSvc.rps / RPS_PER_GLYPH) : 0
 
     /* Disk latency is what etcd's health actually is: a proposal cannot commit
      * faster than the slowest member of the quorum can fsync it. */

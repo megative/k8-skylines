@@ -203,6 +203,9 @@ export function createConsole(bus: Bus, registry: Registry, sim: Sim): Console {
       else if (it.kind === 'toast') bus.emit('toast', { text: it.text, kind: it.level })
       else if (it.kind === 'delete') bus.emit('delete', { kind: it.resource, namespace: it.namespace, name: it.name })
       else if (it.kind === 'apply') bus.emit('apply', { kind: it.resource, name: it.name })
+      else if (it.kind === 'edit') {
+        bus.emit('edit', { kind: it.resource, namespace: it.namespace, name: it.name, path: it.path, value: it.value })
+      }
     }
     out.scrollTop = out.scrollHeight
   }
